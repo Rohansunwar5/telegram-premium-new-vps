@@ -25,7 +25,7 @@ export class UserRepository {
   }
 
   async getUserById(id: string) {
-    return this._model.findById(id).select('img _id firstName lastName email isdCode phoneNumber verified createdAt updatedAt __v');
+    return this._model.findById(id).select('img _id firstName lastName email credits isdCode phoneNumber verified createdAt updatedAt __v');
   }
 
   async updateUser(params: {

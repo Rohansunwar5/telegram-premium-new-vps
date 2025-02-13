@@ -9,6 +9,9 @@ error.log
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
+.mytest/
+
+.husky/
 # Runtime data
 pids
 *.pid
