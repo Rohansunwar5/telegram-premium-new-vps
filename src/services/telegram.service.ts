@@ -93,6 +93,28 @@ class TelegramService {
 
         return response.data;
     }
+
+    async proxyRequest(query: string) {
+        const API_URL = 'https://api.tgdev.io/tgscan/v1/test/search';
+        const API_KEY = process.env.TG_DEV_API_KEY;
+     
+
+        const formData = new URLSearchParams();
+        formData.append('query', query);
+
+        const response = await axios.post(API_URL, formData, {
+            headers: {
+                'Api-Key': API_KEY,
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+        });
+
+        if (response.status !== 200) {
+            throw new InternalServerError('Failed to forward request');
+        }
+
+        return response.data;
+    }
 }
 
 export default new TelegramService(new UserRepository());

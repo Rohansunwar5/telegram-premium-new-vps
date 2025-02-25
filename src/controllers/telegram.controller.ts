@@ -34,3 +34,18 @@ export const startSecondServices = async (req: Request, res: Response, next: Nex
 
     next(response);
 } 
+
+export const proxyRequest = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { query } = req.body;
+
+        if (!query) {
+            return res.status(400).json({ error: 'Query parameter is required' });
+        }
+
+        const response = await telegramService.proxyRequest(query);
+        res.json(response);
+    } catch (error) {
+        next(error);
+    }
+}; 

@@ -7,10 +7,15 @@ const razorpayInstance = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'default_key_secret',
 });
 
+
+
+
 export const verifyPayment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orderId, razorpayPaymentId, razorpaySignature } = req.body;
     const userId = req.user._id; 
+    console.log("This is my userdi",userId);
+    
     const result = await paymentService.verifyAndAddCredits(userId, orderId, razorpayPaymentId, razorpaySignature);
 
     if (result.success) {
