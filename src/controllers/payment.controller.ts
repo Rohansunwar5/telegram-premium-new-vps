@@ -8,15 +8,12 @@ const razorpayInstance = new Razorpay({
 });
 
 
-
-
 export const verifyPayment = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { orderId, razorpayPaymentId, razorpaySignature } = req.body;
+    const { orderId, razorpayPaymentId, razorpaySignature, planType } = req.body;
     const userId = req.user._id; 
-    console.log("This is my userdi",userId);
     
-    const result = await paymentService.verifyAndAddCredits(userId, orderId, razorpayPaymentId, razorpaySignature);
+    const result = await paymentService.verifyAndAddCredits(userId, orderId, razorpayPaymentId, razorpaySignature, planType);
 
     if (result.success) {
       res.json({ status: 'success', credits: result.credits });
@@ -32,7 +29,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
   try {
     const { amount, currency } = req.body;
     const options = {
-      amount: amount * 100, // amount in the smallest currency unit
+      amount: amount * 100, 
       currency: currency || 'INR',
       receipt: `receipt_order_${Date.now()}`,
     };

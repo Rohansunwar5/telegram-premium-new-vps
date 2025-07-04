@@ -24,8 +24,17 @@ export class UserRepository {
     return this._model.create({ firstName, lastName, email, password });
   }
 
+ 
+ async updateUserCredits(userId: string, creditDelta: number) {
+    return this._model.findByIdAndUpdate(
+        userId,
+        { $inc: { credits: creditDelta } },
+        { new: true }
+    );
+}
+
   async getUserById(id: string) {
-    return this._model.findById(id).select('img _id firstName lastName email credits isdCode phoneNumber verified createdAt updatedAt __v');
+    return this._model.findById(id).select('img _id firstName lastName email credits phoneNumber verified createdAt updatedAt __v');
   }
 
   async updateUser(params: {
