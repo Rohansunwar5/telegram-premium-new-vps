@@ -45,13 +45,16 @@ class AuthService {
   }
 
   async generateJWTToken(userId: string) {
+    const sessionId = nanoid();
+
     const token = jwt.sign({
       _id: userId.toString(),
+      sessionId
     }, config.JWT_SECRET, { expiresIn: '24h' });
 
     const key = await encryptionKey(config.JWT_CACHE_ENCRYPTION_KEY);
     const encryptedData = await encode(token, key);
-    await encodedJWTCacheManager.set({ userId }, encryptedData);
+    await encodedJWTCacheManager.set({ userId, sessionId }, encryptedData);
 
     return token;
   }

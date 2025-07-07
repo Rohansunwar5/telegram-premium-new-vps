@@ -7,6 +7,7 @@ interface IEncodedJWTCacheResponse {
 
 interface IEncodedJWTCacheManagerParams {
   userId: string;
+  sessionId: string;
 }
 
 interface IProfileCacheManagerParams {
