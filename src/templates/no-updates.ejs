@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>No New Updates - <%= channelName %></title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #a8e6cf 0%, #dcedc1 100%);
+            color: #2d5f3f;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            margin: -30px -30px 20px -30px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .info-box {
+            background-color: #f0f8ff;
+            border-left: 4px solid #4a90e2;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ No New Updates</h1>
+            <p style="margin: 5px 0; opacity: 0.9;"><%= channelName %></p>
+        </div>
+
+        <p>Hello <%= userName %>,</p>
+        
+        <div class="info-box">
+            <p><strong>Channel:</strong> <%= channelName %></p>
+            <p><strong>Last Checked:</strong> <%= new Date(lastChecked).toLocaleString() %></p>
+            <p>There have been no new messages in this channel since your last summary.</p>
+        </div>
+
+        <p>We'll continue monitoring this channel and notify you when there are new updates.</p>
+
+        <div class="footer">
+            <p>This is an automated notification from your Darkmap channel monitoring.</p>
+            <p>&copy; 2024 Darkmap. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

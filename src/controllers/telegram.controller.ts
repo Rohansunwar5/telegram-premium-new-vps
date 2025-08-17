@@ -22,19 +22,6 @@ export const channelMessages = async (req: Request, res: Response, next: NextFun
     next(response);
 } 
 
-export const startFirstServices = async (req: Request, res: Response, next: NextFunction) => {
-    const { email } = req.body;
-    const response = await telegramService.startFirstService(email);
-
-    next(response);
-} 
-
-export const startSecondServices = async (req: Request, res: Response, next: NextFunction) => {
-    const { email } = req.body;
-    const response = await telegramService.startSecondService(email);
-
-    next(response);
-} 
 
 export const proxyRequest = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -50,7 +37,36 @@ export const proxyRequest = async (req: Request, res: Response, next: NextFuncti
     } catch (error) {
         next(error);
     }
-}; 
+};
+
+export const analyzeChannel = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { channel_username, language } = req.body;
+        
+        if (!channel_username) {
+            return res.status(400).json({ error: 'Channel username is required' });
+        }
+
+        // Optional: Validate language parameter on your server side
+        const supportedLanguages = [
+            'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 
+            'gujarati', 'urdu', 'kannada', 'odia', 'malayalam', 'punjabi', 
+            'assamese', 'maithili', 'santali', 'konkani', 'sindhi', 
+            'dogri', 'kashmiri', 'sanskrit', 'nepali'
+        ];
+
+        if (language && !supportedLanguages.includes(language.toLowerCase())) {
+            return res.status(400).json({ 
+                error: `Unsupported language: ${language}. Supported languages: ${supportedLanguages.join(', ')}` 
+            });
+        }
+
+        const response = await telegramService.analyzeChannel(channel_username, language);
+        res.json(response);
+    } catch (error) {
+        next(error);
+    }
+};
 
 // Add this to your existing controllers
 export const checkPhoneNumber = async (req: Request, res: Response, next: NextFunction) => {
@@ -87,3 +103,4 @@ export const tgDev = async (req: Request, res: Response, next: NextFunction) => 
     }
 
 }; 
+

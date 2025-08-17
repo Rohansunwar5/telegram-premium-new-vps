@@ -83,33 +83,10 @@ class AuthService {
   }
 
   async profile(userId: string) {
-    const cached = await profileCacheManager.get({ userId });
-    if (!cached) {
       const user = await this._userRepository.getUserById(userId);
       if (!user) throw new NotFoundError('User not found');
-
-      // set cache;
-      await profileCacheManager.set({ userId }, user);
       return user;
-    }
-    return cached;
   }
-
-  // async deleteAccount(code: string, userId: string) {
-  //   const storedOTP = await otpDeleteAccountCacheManager.get({ userId });
-  //   if (storedOTP?.code !== code) {
-  //     throw new BadRequestError('Invalid OTP');
-  //   }
-
-  //   // const updatedProfile = await this._userRepository.deleteAccount(userId);
-  //   if (!updatedProfile) throw new InternalServerError('Failed to delete account');
-
-  //   // set new token in place of existing in cache
-  //   await this.generateJWTToken(userId);
-
-  //   return true;
-  // }
-
 }
 
 export default new AuthService(new UserRepository());

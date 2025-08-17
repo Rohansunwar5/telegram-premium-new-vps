@@ -3,6 +3,10 @@ import { UserRepository } from '../repository/user.repository';
 import { InternalServerError } from '../errors/internal-server.error';
 import { NotFoundError } from '../errors/not-found.error';
 import { BadRequestError } from '../errors/bad-request.error';
+import { UnauthorizedError } from '../errors/unauthorized.error';
+import { ForbiddenError } from '../errors/forbidden.error';
+import { RequestValidationError } from '../errors/request-validation.error';
+import { TooManyRequestsError } from '../errors/too-many-request.error';
 
 class TelegramService {
     private readonly CREDITS_PER_REQUEST = 10;
@@ -62,41 +66,6 @@ class TelegramService {
         return response.data;
     }
 
-    async startFirstService(email: string){
-        const response = await axios.post(
-            `https://7bz70q53n2.execute-api.us-east-1.amazonaws.com/prod/start-service`,
-            {email},
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            }
-        )
-
-        if(response.status !== 200) {
-            throw new InternalServerError('Failed to start first service');
-        }
-
-        return response.data;
-    }
-
-    async startSecondService(email: string){
-        const response = await axios.post(
-            `https://3n9j098tbf.execute-api.us-east-1.amazonaws.com/prod/start-services`,
-            {email},
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            }
-        )
-
-        if(response.status !== 200) {
-            throw new InternalServerError('Failed to start first service');
-        }
-
-        return response.data;
-    }
 
     async checkUserCredits(userId: string) {
         const user = await this._userRepository.getUserById(userId);
@@ -131,54 +100,44 @@ class TelegramService {
         return true;
     }
 
-    // Add this to your TelegramService class
-async checkPhoneNumber(userId: string, phoneNumber: string) {
-    // Check user has enough credits
-    await this.checkUserCredits(userId);
-    
-    // Format phone number (ensure it starts with +)
-    const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
-    
-    // Make the API request
-    const response = await axios.post(
-        'https://number-name.darkmap.org/check',
-        [formattedPhone], // Note the array format
-        {
-            headers: {
-                'Content-Type': 'application/json',
-            },
+    async checkPhoneNumber(userId: string, phoneNumber: string) {
+        await this.checkUserCredits(userId);
+        const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
+
+        const response = await axios.post(
+            'https://number-name.darkmap.org/check',
+            [formattedPhone],
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (response.status !== 200) {
+            throw new InternalServerError('Failed to check phone number');
         }
-    );
 
-    if (response.status !== 200) {
-        throw new InternalServerError('Failed to check phone number');
+        const data = response.data;
+        const phoneKey = Object.keys(data)[0];
+        const userData = data[phoneKey];
+        
+        if (!userData || !userData.id) {
+            throw new NotFoundError('No user found for this phone number');
+        }
+        
+        return {
+            success: true,
+            userId: userData.id,
+            username: userData.username,
+            firstName: userData.first_name,
+            lastName: userData.last_name,
+            phone: userData.phone,
+            verified: userData.verified,
+            premium: userData.premium,
+            status: userData.status
+        };
     }
-
-    const data = response.data;
-    
-    // Extract the first key (phone number) from the response
-    const phoneKey = Object.keys(data)[0];
-    const userData = data[phoneKey];
-    
-    if (!userData || !userData.id) {
-        throw new NotFoundError('No user found for this phone number');
-    }
-
-    // Deduct credits only if successful
-    // await this.deductCredits(userId, this.CREDITS_PER_REQUEST);
-    
-    return {
-        success: true,
-        userId: userData.id,
-        username: userData.username,
-        firstName: userData.first_name,
-        lastName: userData.last_name,
-        phone: userData.phone,
-        verified: userData.verified,
-        premium: userData.premium,
-        status: userData.status
-    };
-}
 
     async proxyRequest(query: string) {
         const API_URL = 'https://api.tgdev.io/tgscan/v1/search';
@@ -199,7 +158,78 @@ async checkPhoneNumber(userId: string, phoneNumber: string) {
             throw new InternalServerError('Failed to forward request');
         }
 
-        return response.data;
+        const sortedData = this.sortResponseData(response.data);
+
+        return sortedData;
+    }
+
+    private sortResponseData(data: any): any {
+        if (!data?.result) return data;
+
+        if (data.result.username_history) {
+            data.result.username_history.sort((a: any, b: any) => {
+                return new Date(b.date).getTime() - new Date(a.date).getTime();
+            });
+        }
+
+        if (data.result.groups) {
+            data.result.groups.sort((a: any, b: any) => {
+                return new Date(b.date_updated).getTime() - new Date(a.date_updated).getTime();
+            });
+        }
+
+        return data;
+    }
+
+
+   async analyzeChannel(channelUsername: string, language?: string) {
+        const requestBody: { channel_username: string; language?: string } = {
+            channel_username: channelUsername
+        };
+        if (language) {
+            requestBody.language = language;
+        }
+        
+        try {
+            const response = await axios.post(
+                'https://analyze.darkmap.org/analyze-channel',
+                requestBody,
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+            return response.data;
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                if (error.response) {
+                    const status = error.response.status;
+                    const errorMessage = error.response.data?.error || error.response.data?.message || error.response.statusText || 'Unknown error from external API';
+                    
+                    switch (status) {
+                        case 400:
+                            throw new BadRequestError(errorMessage);
+                        case 404:
+                            throw new NotFoundError(errorMessage);
+                        case 401:
+                            throw new UnauthorizedError(errorMessage);
+                        case 403:
+                            throw new ForbiddenError(errorMessage);
+                        case 422:
+                            throw new RequestValidationError(errorMessage);
+                        case 429:
+                            throw new TooManyRequestsError();
+                        default:
+                            throw new BadRequestError(errorMessage);
+                    }
+                } 
+                else if (error.request) {
+                    throw new InternalServerError('Unable to connect to external API service');
+                }
+            }
+            throw new InternalServerError('Unexpected error occurred while analyzing channel');
+        }
     }
 }
 
