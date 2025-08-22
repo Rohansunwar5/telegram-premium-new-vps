@@ -89,7 +89,6 @@ class BookmarkService {
         throw new BadRequestError('Unauthorized to update this bookmark');
         }
 
-        // Validate alert time if provided
         if (alertTime) {
         const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
         if (!timeRegex.test(alertTime)) {
@@ -104,7 +103,6 @@ class BookmarkService {
         });
 
         if (updatedBookmark) {
-        // Reschedule alert job if time or days changed
         if (alertTime || alertDays) {
             await this.scheduleAlertJob(updatedBookmark);
         }
@@ -370,7 +368,7 @@ class BookmarkService {
 
             await mailService.sendMail(
                 user.email,
-                'channel-summary.ejs', // You'll need to create this template
+                'channel-summary.ejs', 
                 {
                     userName: user.firstName || 'User',
                     channelName: bookmark.channelName,
@@ -578,7 +576,7 @@ class BookmarkService {
             isManual: true
         }, {
             delay: 0,
-            priority: 1 // Higher priority for manual triggers
+            priority: 1 
         });
 
         logger.info(`Manual scrape triggered for bookmark ${bookmarkId}, job ${job.id}`);

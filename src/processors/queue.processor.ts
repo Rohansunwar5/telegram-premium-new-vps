@@ -19,7 +19,7 @@ export const initializeQueueProcessors = async () => {
     const userRepository = new UserRepository();
     bookmarkService = new BookmarkService(bookmarkRepository, s3Service, channelService, userRepository);
     
-    // IMPORTANT: Make sure queues are not paused
+
     const scrapePaused = await scrapeQueue.isPaused();
     const alertPaused = await alertQueue.isPaused();
     
@@ -33,7 +33,7 @@ export const initializeQueueProcessors = async () => {
       await alertQueue.resume();
     }
     
-    // Register scrape processor
+
     scrapeQueue.process('scrape-channel', 5, async (job: Job) => {
       const { bookmarkId, channelId, channelName, isInitial } = job.data;
       
@@ -61,7 +61,7 @@ export const initializeQueueProcessors = async () => {
       }
     });
     
-    // Register alert processor
+
     alertQueue.process('process-alert', 3, async (job: Job) => {
       const { bookmarkId, userId } = job.data;
       
@@ -93,7 +93,7 @@ export const initializeQueueProcessors = async () => {
       }
     });
     
-    // Event listeners
+
     scrapeQueue.on('active', (job) => {
       logger.info(`⚡ Scrape job ${job.id} is now active`);
     });
@@ -122,7 +122,7 @@ export const initializeQueueProcessors = async () => {
       logger.error(`❌ Alert job ${job?.id} failed: ${err.message}`);
     });
     
-    // Check and process any waiting jobs
+
     const scrapeWaiting = await scrapeQueue.getWaitingCount();
     const alertWaiting = await alertQueue.getWaitingCount();
     const scrapePausedFinal = await scrapeQueue.isPaused();
@@ -135,7 +135,7 @@ export const initializeQueueProcessors = async () => {
       alertPaused: alertPausedFinal
     });
     
-    // If there are waiting jobs and queue is not paused, they should start processing
+    
     if (scrapeWaiting > 0 && !scrapePausedFinal) {
       logger.info(`🚀 ${scrapeWaiting} scrape jobs waiting to be processed`);
     }
@@ -152,8 +152,7 @@ export const cleanupQueues = async () => {
   try {
     logger.info('Cleaning up queues...');
     
-    // DON'T pause here during cleanup if we want jobs to finish
-    // Just close when ready
+    
     await Promise.race([
       Promise.all([
         scrapeQueue.whenCurrentJobsFinished(),
