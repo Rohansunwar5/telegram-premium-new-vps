@@ -8,6 +8,7 @@ interface IScrapeParams {
     channelName: string;
     limit?: number | null;
     since?: Date | string;  
+    triggerWords?: string[]; 
 }
 
 export class ChannelService {
@@ -19,11 +20,9 @@ export class ChannelService {
 
     async scrapeChannel(params: IScrapeParams | string): Promise<any> {
         try {
-            // Handle both old (string) and new (object) parameter formats
             let scrapeParams: IScrapeParams;
             
             if (typeof params === 'string') {
-                // Legacy support - just channel name
                 scrapeParams = {
                     channelName: params,
                     limit: 100
@@ -34,7 +33,8 @@ export class ChannelService {
 
             logger.info(`📡 Scraping ${scrapeParams.channelName}`, {
                 limit: scrapeParams.limit,
-                since: scrapeParams.since ? new Date(scrapeParams.since).toISOString() : 'all'
+                since: scrapeParams.since ? new Date(scrapeParams.since).toISOString() : 'all',
+                triggerWords: scrapeParams.triggerWords || 'none'
             });
 
             // Build request body for your Flask API
@@ -52,9 +52,12 @@ export class ChannelService {
                 requestBody.since = scrapeParams.since instanceof Date 
                     ? scrapeParams.since.toISOString() 
                     : scrapeParams.since;
-                    
-                // Or if your API expects timestamp:
-                // requestBody.since_timestamp = new Date(scrapeParams.since).getTime() / 1000;
+            }
+
+            // Add triggerWords if provided
+            if (scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0) {
+                requestBody.triggerWords = scrapeParams.triggerWords;
+                logger.info(`🎯 Sending trigger words to API: ${scrapeParams.triggerWords.join(', ')}`);
             }
 
             // Call your Flask API
@@ -65,7 +68,7 @@ export class ChannelService {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    timeout: 30000 // 30 second timeout for scraping
+                    timeout: 1200000 // 30 second timeout for scraping
                 }
             );
 
@@ -96,19 +99,46 @@ export class ChannelService {
             logger.info(`✅ Scraped ${sortedMessages.length} messages from ${scrapeParams.channelName}`, {
                 firstMessage: firstMessageTimestamp.toISOString(),
                 lastMessage: lastMessageTimestamp.toISOString(),
-                timeSpan: this.formatDuration(timeDifference)
+                timeSpan: this.formatDuration(timeDifference),
+                withTriggerWords: !!(scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0)
             });
 
-            // Return formatted response
-            return {
+            // FIXED: Include analysis and statistics from API response
+            const result = {
                 messages: sortedMessages,
                 channelInfo: response.data.channelInfo,
                 firstMessageTimestamp,
                 lastMessageTimestamp,
                 timeDifference,
                 messageCount: sortedMessages.length,
-                isIncremental: !!scrapeParams.since
+                isIncremental: !!scrapeParams.since,
+                // NEW: Include the analysis and statistics data from API
+                analysis: response.data.analysis,
+                statistics: response.data.statistics,
+                // Include trigger words info in result
+                usedTriggerWords: scrapeParams.triggerWords || []
             };
+
+            // Log what analysis/statistics data we received
+            if (response.data.analysis) {
+                logger.info(`📊 Received analysis data:`, {
+                    frequency_hourly_length: response.data.analysis.frequency_hourly?.length || 0,
+                    frequency_user_count: Object.keys(response.data.analysis.frequency_user || {}).length,
+                    frequency_weekday_count: Object.keys(response.data.analysis.frequency_weekday || {}).length,
+                    links_count: response.data.analysis.links?.length || 0,
+                    has_trigger_frequency: !!response.data.analysis.trigger_frequency
+                });
+            }
+
+            if (response.data.statistics) {
+                logger.info(`📈 Received statistics data:`, {
+                    unique_users_count: response.data.statistics.unique_users_count,
+                    message_count: response.data.statistics.message_count,
+                    time_difference_ms: response.data.statistics.time_difference_ms
+                });
+            }
+
+            return result;
             
         } catch (error: any) {
             logger.error('Error scraping channel:', error);
@@ -126,19 +156,19 @@ export class ChannelService {
         }
     }
 
-    private formatDuration(ms: number): string {
-        const seconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        const days = Math.floor(hours / 24);
+        private formatDuration(ms: number): string {
+            const seconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
 
-        if (days > 0) return `${days}d ${hours % 24}h`;
-        if (hours > 0) return `${hours}h ${minutes % 60}m`;
-        if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-        return `${seconds}s`;
-    }
+            if (days > 0) return `${days}d ${hours % 24}h`;
+            if (hours > 0) return `${hours}h ${minutes % 60}m`;
+            if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+            return `${seconds}s`;
+        }
 
-     async summarizeMessages(messages: any[], channelName: string): Promise<string> {
+        async summarizeMessages(messages: any[], channelName: string): Promise<string> {
         try {
             if (messages.length === 0) {
                 return 'No messages to summarize.';
@@ -153,6 +183,7 @@ export class ChannelService {
                     messages,
                     channelName,
                     language: 'english',
+                    triggerWords: ['important', 'urgent', 'announcement', 'update'], // Add trigger words
                     // Add message count for better context
                     context: {
                         totalMessages: messages.length,
@@ -163,7 +194,7 @@ export class ChannelService {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    timeout: 60000 // 60 second timeout for GPT summarization
+                    timeout: 1200000 // 60 second timeout for GPT summarization
                 }
             );
 
@@ -172,12 +203,21 @@ export class ChannelService {
             }
 
             logger.info('✅ Summary generated successfully');
-            return response.data.summary;
+
+            // Add this after the API call for debugging
+            console.log('API Response Keys:', Object.keys(response.data));
+            console.log('Analysis field exists:', !!response.data.analysis);
+            console.log('Analysis content preview:', response.data.analysis?.substring(0, 100));
+                    
+            // FIXED: Use 'analysis' instead of 'summary'
+            return response.data.analysis || 'No summary available';
             
         } catch (error: any) {
             logger.error('Error summarizing messages:', error);
             
             if (error.response) {
+                // Log the actual response for debugging
+                logger.error('API Response:', error.response.data);
                 throw new InternalServerError(`Summarization failed: ${error.response.data?.error || 'Unknown error'}`);
             }
             

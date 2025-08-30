@@ -32,6 +32,29 @@ const scrapeDataSchema = new mongoose.Schema(
             type: Number,
             required: true,
         },
+        analysis: {
+            frequency_hourly: [Number], // Array of 24 numbers for hourly frequency
+            frequency_user: {
+                type: Map,
+                of: Number // Map of username to message count
+            },
+            frequency_weekday: {
+                type: Map,
+                of: Number // Map of weekday to message count
+            },
+            links: [{
+                links: [String],
+                message_id: Number
+            }],
+            trigger_frequency: {
+                type: Map,
+                of: mongoose.Schema.Types.Mixed, // For flexible nested objects
+                default: () => new Map()
+            }
+        },
+        statistics: {
+            unique_users_count: Number
+        },
         scrapedAt: {
             type: Date, 
             default: Date.now,
@@ -60,6 +83,19 @@ export interface IScrapeData extends mongoose.Document {
   firstMessageTimestamp: Date;
   lastMessageTimestamp: Date;
   timeDifference: number;
+  analysis?: {
+    frequency_hourly: number[];
+    frequency_user: Map<string, number>;
+    frequency_weekday: Map<string, number>;
+    links: Array<{
+      links: string[];
+      message_id: number;
+    }>;
+    trigger_frequency: Map<string, any>;
+  };
+  statistics?: {
+    unique_users_count: number;
+  };
   scrapedAt: Date;
   isProcessed: boolean;
   processedAt: Date | null;

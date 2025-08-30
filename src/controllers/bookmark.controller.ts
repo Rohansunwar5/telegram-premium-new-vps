@@ -14,14 +14,15 @@ const bookmarkService = new BookmarkService(bookmarkRepository, s3Service, chann
 
 export const createBookmark = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;
-  const { channelName, channelId, alertTime, alertDays } = req.body;
+  const { channelName, channelId, alertTime, alertDays, triggerWords } = req.body;
 
   const response = await bookmarkService.bookmarkChannel({
     userId,
     channelName,
     channelId,
     alertTime,
-    alertDays
+    alertDays,
+    triggerWords
   });
 
   next(response);
@@ -30,14 +31,15 @@ export const createBookmark = async (req: Request, res: Response, next: NextFunc
 export const updateBookmark = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;
   const { bookmarkId } = req.params;
-  const { alertTime, alertDays, isActive } = req.body;
+  const { alertTime, alertDays, isActive, triggerWords } = req.body;
 
   const response = await bookmarkService.updateBookmarkSettings({
     userId,
     bookmarkId,
     alertTime,
     alertDays,
-    isActive
+    isActive,
+    triggerWords
   });
 
   next(response);
@@ -141,6 +143,39 @@ export const getBookmarkSummary = async (req: Request, res: Response, next: Next
 
   // Process alert manually
   const response = await bookmarkService.processAlertJob(bookmarkId);
+
+  next(response);
+};
+
+export const getDashboardStats = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { bookmarkId } = req.params;
+
+  const stats = await bookmarkService.getBookmarkDashboardStats(bookmarkId, userId);
+
+  next(stats);
+}
+
+export const getAllUserDashboardStats = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+
+  const stats = await bookmarkService.getAllUserDashboardStats(userId);
+
+  next(stats);
+};
+
+export const getBookmarkScrapeData = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { bookmarkId } = req.params;
+  const { days, limit, page } = req.query;
+
+  const response = await bookmarkService.getBookmarkScrapeData({
+    userId,
+    bookmarkId,
+    days: days ? parseInt(days as string) : 2,
+    limit: limit ? parseInt(limit as string) : undefined,
+    page: page ? parseInt(page as string) : 1
+  });
 
   next(response);
 };
