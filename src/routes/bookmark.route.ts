@@ -1,7 +1,7 @@
 import { Router } from "express";
 import isLoggedIn from "../middlewares/isLoggedIn.middleware";
 import { asyncHandler } from "../utils/asynchandler";
-import { createBookmark, deleteBookmark, getAllUserDashboardStats, getBookmarkScrapeData, getBookmarkSummary, getDashboardStats, getUserBookmarks, manualScrape, pauseBookmark, resumeBookmark, triggerAlert, updateBookmark } from "../controllers/bookmark.controller";
+import { createBookmark, deleteBookmark, getAllUserDashboardStats, getBookmarkById, getBookmarkScrapeData, getBookmarkSummary, getDashboardStats, getUserBookmarks, manualScrape, pauseBookmark, resumeBookmark, triggerAlert, updateBookmark } from "../controllers/bookmark.controller";
 
 const bookmarkRouter = Router();
 
@@ -9,6 +9,8 @@ bookmarkRouter.post('/', isLoggedIn, asyncHandler(createBookmark));
 bookmarkRouter.put('/:bookmarkId', isLoggedIn, asyncHandler(updateBookmark));
 bookmarkRouter.delete('/:bookmarkId', isLoggedIn, asyncHandler(deleteBookmark));
 bookmarkRouter.get('/bookmarks', isLoggedIn, asyncHandler(getUserBookmarks));
+bookmarkRouter.get('/:bookmarkId', isLoggedIn, asyncHandler(getBookmarkById));
+
 bookmarkRouter.post('/:bookmarkId/scrape', isLoggedIn, asyncHandler(manualScrape));
 bookmarkRouter.post('/:bookmarkId/summary', isLoggedIn, asyncHandler(getBookmarkSummary));
 

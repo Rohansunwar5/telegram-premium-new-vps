@@ -194,7 +194,7 @@ export class ChannelService {
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    timeout: 1200000 // 60 second timeout for GPT summarization
+                    timeout: 1200000 
                 }
             );
 
@@ -202,21 +202,13 @@ export class ChannelService {
                 throw new InternalServerError('Summarization failed');
             }
 
-            logger.info('✅ Summary generated successfully');
 
-            // Add this after the API call for debugging
-            console.log('API Response Keys:', Object.keys(response.data));
-            console.log('Analysis field exists:', !!response.data.analysis);
-            console.log('Analysis content preview:', response.data.analysis?.substring(0, 100));
-                    
-            // FIXED: Use 'analysis' instead of 'summary'
             return response.data.analysis || 'No summary available';
             
         } catch (error: any) {
             logger.error('Error summarizing messages:', error);
             
             if (error.response) {
-                // Log the actual response for debugging
                 logger.error('API Response:', error.response.data);
                 throw new InternalServerError(`Summarization failed: ${error.response.data?.error || 'Unknown error'}`);
             }

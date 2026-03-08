@@ -33,27 +33,27 @@ const scrapeDataSchema = new mongoose.Schema(
             required: true,
         },
         analysis: {
-            frequency_hourly: [Number], // Array of 24 numbers for hourly frequency
-            frequency_user: {
+            frequencyHourly: [Number], // Array of 24 numbers for hourly frequency
+            frequencyUser: {
                 type: Map,
                 of: Number // Map of username to message count
             },
-            frequency_weekday: {
+            frequencyWeekday: {
                 type: Map,
                 of: Number // Map of weekday to message count
             },
             links: [{
                 links: [String],
-                message_id: Number
+                messageId: Number
             }],
-            trigger_frequency: {
+            triggerFrequency: {
                 type: Map,
                 of: mongoose.Schema.Types.Mixed, // For flexible nested objects
                 default: () => new Map()
             }
         },
         statistics: {
-            unique_users_count: Number
+            uniqueUsersCount: Number
         },
         scrapedAt: {
             type: Date, 
@@ -84,17 +84,17 @@ export interface IScrapeData extends mongoose.Document {
   lastMessageTimestamp: Date;
   timeDifference: number;
   analysis?: {
-    frequency_hourly: number[];
-    frequency_user: Map<string, number>;
-    frequency_weekday: Map<string, number>;
+    frequencyHourly: number[]; 
+    frequencyUser: Map<string, number>; 
+    frequencyWeekday: Map<string, number>; 
     links: Array<{
       links: string[];
-      message_id: number;
+      messageId: number;
     }>;
-    trigger_frequency: Map<string, any>;
+    triggerFrequency: Map<string, any>; 
   };
   statistics?: {
-    unique_users_count: number;
+    uniqueUsersCount: number;
   };
   scrapedAt: Date;
   isProcessed: boolean;

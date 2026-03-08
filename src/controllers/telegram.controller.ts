@@ -47,12 +47,11 @@ export const analyzeChannel = async (req: Request, res: Response, next: NextFunc
             return res.status(400).json({ error: 'Channel username is required' });
         }
 
-        // Optional: Validate language parameter on your server side
         const supportedLanguages = [
             'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 
             'gujarati', 'urdu', 'kannada', 'odia', 'malayalam', 'punjabi', 
             'assamese', 'maithili', 'santali', 'konkani', 'sindhi', 
-            'dogri', 'kashmiri', 'sanskrit', 'nepali'
+            'dogri', 'kashmiri', 'sanskrit', 'nepali', 'chinese'
         ];
 
         if (language && !supportedLanguages.includes(language.toLowerCase())) {

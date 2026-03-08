@@ -57,7 +57,7 @@ export const deleteBookmark = async (req: Request, res: Response, next: NextFunc
 export const getUserBookmarks = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;
 
-  const response = await bookmarkService.getUserBookmarks(userId);
+  const response = await bookmarkService.getUserBookmarkslist(userId);
 
   next(response);
 };
@@ -176,6 +176,15 @@ export const getBookmarkScrapeData = async (req: Request, res: Response, next: N
     limit: limit ? parseInt(limit as string) : undefined,
     page: page ? parseInt(page as string) : 1
   });
+
+  next(response);
+};
+
+export const getBookmarkById = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { bookmarkId } = req.params;
+
+  const response = await bookmarkService.getBookmarkById(userId, bookmarkId);
 
   next(response);
 };

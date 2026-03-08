@@ -49,16 +49,17 @@ export interface ICreateScrapeDataParams {
   lastMessageTimestamp: Date;
   timeDifference: number;
   analysis?: {
-    frequency_hourly: number[];
-    frequency_user: Map<string, number> | Record<string, number>; // Support both formats
-    frequency_weekday: Map<string, number> | Record<string, number>; // Support both formats
+    frequencyHourly: number[]; // Changed from frequency_hourly
+    frequencyUser: Map<string, number> | Record<string, number>; // Changed from frequency_user
+    frequencyWeekday: Map<string, number> | Record<string, number>; // Changed from frequency_weekday
     links: Array<{
       links: string[];
-      message_id: number;
+      messageId: number; // Changed from message_id
     }>;
+    triggerFrequency?: Map<string, any> | Record<string, any>; // Changed from trigger_frequency
   };
   statistics?: {
-    unique_users_count: number;
+    uniqueUsersCount: number; // Changed from unique_users_count
   };
 }
 
@@ -151,28 +152,31 @@ export class BookmarkRepository {
             // Handle analysis data conversion
             if (params.analysis) {
                 logger.info(`Processing analysis data:`, {
-                    frequency_hourly_length: params.analysis.frequency_hourly?.length || 0,
-                    frequency_user_type: params.analysis.frequency_user?.constructor?.name,
-                    frequency_weekday_type: params.analysis.frequency_weekday?.constructor?.name,
-                    links_length: params.analysis.links?.length || 0
+                    frequencyHourlyLength: params.analysis.frequencyHourly?.length || 0, // Updated logging
+                    frequencyUserType: params.analysis.frequencyUser?.constructor?.name,
+                    frequencyWeekdayType: params.analysis.frequencyWeekday?.constructor?.name,
+                    linksLength: params.analysis.links?.length || 0
                 });
 
                 processedParams.analysis = {
-                    frequency_hourly: params.analysis.frequency_hourly || [],
-                    frequency_user: params.analysis.frequency_user instanceof Map 
-                        ? params.analysis.frequency_user 
-                        : new Map(Object.entries(params.analysis.frequency_user || {})),
-                    frequency_weekday: params.analysis.frequency_weekday instanceof Map 
-                        ? params.analysis.frequency_weekday 
-                        : new Map(Object.entries(params.analysis.frequency_weekday || {})),
-                    links: params.analysis.links || []
+                    frequencyHourly: params.analysis.frequencyHourly || [], // Updated field name
+                    frequencyUser: params.analysis.frequencyUser instanceof Map 
+                        ? params.analysis.frequencyUser 
+                        : new Map(Object.entries(params.analysis.frequencyUser || {})),
+                    frequencyWeekday: params.analysis.frequencyWeekday instanceof Map 
+                        ? params.analysis.frequencyWeekday 
+                        : new Map(Object.entries(params.analysis.frequencyWeekday || {})),
+                    links: params.analysis.links || [],
+                    triggerFrequency: params.analysis.triggerFrequency instanceof Map // Updated field name
+                        ? params.analysis.triggerFrequency
+                        : new Map(Object.entries(params.analysis.triggerFrequency || {}))
                 };
 
                 logger.info(`Processed analysis data:`, {
-                    frequency_hourly: processedParams.analysis.frequency_hourly.length,
-                    frequency_user_size: processedParams.analysis.frequency_user.size,
-                    frequency_weekday_size: processedParams.analysis.frequency_weekday.size,
-                    links_count: processedParams.analysis.links.length
+                    frequencyHourly: processedParams.analysis.frequencyHourly.length,
+                    frequencyUserSize: processedParams.analysis.frequencyUser.size,
+                    frequencyWeekdaySize: processedParams.analysis.frequencyWeekday.size,
+                    linksCount: processedParams.analysis.links.length
                 });
             }
 
@@ -180,7 +184,7 @@ export class BookmarkRepository {
             if (params.statistics) {
                 logger.info(`Processing statistics data:`, params.statistics);
                 processedParams.statistics = {
-                    unique_users_count: params.statistics.unique_users_count || 0
+                    uniqueUsersCount: params.statistics.uniqueUsersCount || 0 // Updated field name
                 };
             }
 
@@ -188,11 +192,11 @@ export class BookmarkRepository {
             
             logger.info(`✅ Scrape data created successfully with ID: ${scrapeData._id}`);
             logger.info(`Final saved data:`, {
-                analysis_frequency_hourly: scrapeData.analysis?.frequency_hourly?.length || 0,
-                analysis_frequency_user: scrapeData.analysis?.frequency_user?.size || 0,
-                analysis_frequency_weekday: scrapeData.analysis?.frequency_weekday?.size || 0,
-                analysis_links: scrapeData.analysis?.links?.length || 0,
-                statistics_unique_users: scrapeData.statistics?.unique_users_count || 0
+                analysisFrequencyHourly: scrapeData.analysis?.frequencyHourly?.length || 0,
+                analysisFrequencyUser: scrapeData.analysis?.frequencyUser?.size || 0,
+                analysisFrequencyWeekday: scrapeData.analysis?.frequencyWeekday?.size || 0,
+                analysisLinks: scrapeData.analysis?.links?.length || 0,
+                statisticsUniqueUsers: scrapeData.statistics?.uniqueUsersCount || 0
             });
 
             return scrapeData;
@@ -300,8 +304,8 @@ export class BookmarkRepository {
                         },
                         avgMessagesPerScrape: { $avg: '$messageCount' },
                         lastScrapeAt: { $max: '$scrapedAt' },
-                        oldestMessageInDB: { $min: '$lastMessageTimestamp' },  // lastMessageTimestamp is OLDEST
-                        newestMessageInDB: { $max: '$firstMessageTimestamp' }  // firstMessageTimestamp is NEWEST
+                        oldestMessageInDB: { $min: '$lastMessageTimestamp' },  
+                        newestMessageInDB: { $max: '$firstMessageTimestamp' } 
                     }
                 }
             ]);
@@ -342,23 +346,23 @@ export class BookmarkRepository {
     async getBookmarkScrapeData(params: IGetScrapeDataParams) {
     const { bookmarkId, days, limit, page = 1 } = params;
     
-    // Build the query
+    
     let query: any = { bookmarkId: new mongoose.Types.ObjectId(bookmarkId) };
     
-    // Add date filter if days is specified
+    
     if (days && days > 0) {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - days);
         query.scrapedAt = { $gte: cutoffDate };
     }
 
-    // Build aggregation pipeline
+
     let pipeline: any[] = [
         { $match: query },
-        { $sort: { scrapedAt: -1 } } // Most recent first
+        { $sort: { scrapedAt: -1 } } 
     ];
 
-    // Add pagination if limit is specified
+    
     if (limit && limit > 0) {
         const skip = (page - 1) * limit;
         pipeline.push(
@@ -367,7 +371,6 @@ export class BookmarkRepository {
         );
     }
 
-    // Add lookup to get additional data if needed
     pipeline.push({
         $project: {
             bookmarkId: 1,
@@ -387,13 +390,11 @@ export class BookmarkRepository {
         }
     });
 
-    // Execute aggregation
     const [scrapeData, totalCount] = await Promise.all([
         this._scrapeDataModel.aggregate(pipeline),
         this._scrapeDataModel.countDocuments(query)
     ]);
 
-    // Calculate pagination info
     const totalPages = limit ? Math.ceil(totalCount / limit) : 1;
     const hasNextPage = limit ? page < totalPages : false;
     const hasPrevPage = page > 1;
@@ -417,6 +418,34 @@ export class BookmarkRepository {
             }
         }
     };
+
+    
 }
+
+    async getScrapeDataByTimeWindow(bookmarkId: string, fromTime: Date, toTime: Date): Promise<IScrapeData[]> {
+        try {
+            return await this._scrapeDataModel.find({
+                bookmarkId: new mongoose.Types.ObjectId(bookmarkId),
+                createdAt: {
+                    $gte: fromTime,
+                    $lte: toTime
+                }
+            }).sort({ createdAt: 1 });
+        } catch (error) {
+            logger.error('Error fetching scrape data by time window:', error);
+            throw error;
+        }
+    }
+
+    async getScrapeDataByIds(scrapeDataIds: string[]): Promise<IScrapeData[]> {
+        try {
+            return await this._scrapeDataModel.find({
+                _id: { $in: scrapeDataIds.map(id => new mongoose.Types.ObjectId(id)) }
+            }).sort({ createdAt: 1 });
+        } catch (error) {
+            logger.error('Error fetching scrape data by IDs:', error);
+            throw error;
+        }
+    }
 
 }
