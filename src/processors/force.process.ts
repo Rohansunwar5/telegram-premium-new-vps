@@ -6,6 +6,7 @@ import BookmarkService from '../services/bookmark.service';
 import { BookmarkRepository } from '../repository/bookmark.repository';
 import { S3Service } from '../services/s3.service';
 import { ChannelService } from '../services/channel.service';
+import { UserRepository } from '../repository/user.repository';
 
 const scrapeQueue = new Bull('scrape-queue', {
   redis: {
@@ -18,40 +19,41 @@ const scrapeQueue = new Bull('scrape-queue', {
 async function forceProcess() {
   try {
     console.log('🔧 Force processing jobs...\n');
-    
+
     // Resume queue if paused
     const isPaused = await scrapeQueue.isPaused();
     if (isPaused) {
       console.log('▶️ Queue is paused, resuming...');
       await scrapeQueue.resume();
     }
-    
+
     // Get waiting jobs
     const waitingJobs = await scrapeQueue.getJobs(['waiting']);
     console.log(`Found ${waitingJobs.length} waiting jobs\n`);
-    
+
     if (waitingJobs.length === 0) {
       console.log('No jobs to process');
       process.exit(0);
     }
-    
+
     // Initialize services
     const bookmarkRepository = new BookmarkRepository();
     const s3Service = new S3Service();
     const channelService = new ChannelService();
-    const bookmarkService = new BookmarkService(bookmarkRepository, s3Service, channelService);
-    
+    const userRepository = new UserRepository();
+    const bookmarkService = new BookmarkService(bookmarkRepository, s3Service, channelService, userRepository);
+
     // Register processor
     console.log('📝 Registering processor...');
     scrapeQueue.process('scrape-channel', async (job) => {
       console.log(`\n🔄 Processing job ${job.id}:`, job.data);
-      
+
       try {
         const { bookmarkId, channelId, channelName } = job.data;
-        
+
         console.log(`  Calling Flask API for channel: ${channelName}`);
         const result = await bookmarkService.processScrapeJob(bookmarkId, channelId, channelName);
-        
+
         console.log(`✅ Job ${job.id} completed successfully`);
         return result;
       } catch (error: any) {
@@ -59,10 +61,10 @@ async function forceProcess() {
         throw error;
       }
     });
-    
+
     console.log('⏳ Waiting for jobs to process...');
     console.log('Press Ctrl+C to stop\n');
-    
+
     // Keep process alive
     setInterval(() => {
       scrapeQueue.getWaitingCount().then(count => {
@@ -71,7 +73,7 @@ async function forceProcess() {
         }
       });
     }, 5000);
-    
+
   } catch (error) {
     console.error('❌ Error:', error);
     process.exit(1);
