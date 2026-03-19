@@ -45,7 +45,7 @@ const getAuthMiddlewareByJWTSecret = (jwtSecret: string) => async (
     };
     next();
   } catch (error) {
-    next();
+    next(error);
   }
 };
 export default getAuthMiddlewareByJWTSecret;

@@ -21,6 +21,8 @@ const config = {
 
   SERVER_NAME: `${process.env.SERVER_NAME}-${process.env.NODE_ENV}`! as string,
   JWT_CACHE_ENCRYPTION_KEY: process.env.JWT_CACHE_ENCRYPTION_KEY! as string,
+  TG_DEV_API_KEY: process.env.TG_DEV_API_KEY! as string,
+  ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN! as string,
   DEFAULT_COUNTRY_CODE: 'IN',
 };
 

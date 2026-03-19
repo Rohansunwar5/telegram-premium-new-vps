@@ -48,19 +48,24 @@ export const analyzeChannel = async (req: Request, res: Response, next: NextFunc
         }
 
         const supportedLanguages = [
-            'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil', 
-            'gujarati', 'urdu', 'kannada', 'odia', 'malayalam', 'punjabi', 
-            'assamese', 'maithili', 'santali', 'konkani', 'sindhi', 
+            'english', 'hindi', 'bengali', 'telugu', 'marathi', 'tamil',
+            'gujarati', 'urdu', 'kannada', 'odia', 'malayalam', 'punjabi',
+            'assamese', 'maithili', 'santali', 'konkani', 'sindhi',
             'dogri', 'kashmiri', 'sanskrit', 'nepali', 'chinese'
         ];
 
-        if (language && !supportedLanguages.includes(language.toLowerCase())) {
-            return res.status(400).json({ 
-                error: `Unsupported language: ${language}. Supported languages: ${supportedLanguages.join(', ')}` 
+        // Normalize language: extract English name from formats like "বাংলা (bengali)"
+        const normalizedLanguage = language
+            ? (language.match(/\(([^)]+)\)/)?.[1]?.toLowerCase() ?? language.toLowerCase())
+            : language;
+
+        if (normalizedLanguage && !supportedLanguages.includes(normalizedLanguage)) {
+            return res.status(400).json({
+                error: `Unsupported language: ${language}. Supported languages: ${supportedLanguages.join(', ')}`
             });
         }
 
-        const response = await telegramService.analyzeChannel(channel_username, language);
+        const response = await telegramService.analyzeChannel(channel_username, normalizedLanguage);
         res.json(response);
     } catch (error) {
         next(error);

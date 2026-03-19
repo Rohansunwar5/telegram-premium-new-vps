@@ -1,4 +1,5 @@
 import axios from 'axios';
+import config from '../config';
 import { UserRepository } from '../repository/user.repository';
 import { InternalServerError } from '../errors/internal-server.error';
 import { NotFoundError } from '../errors/not-found.error';
@@ -298,7 +299,7 @@ class TelegramService {
 
     async proxyRequest(query: string) {
         const API_URL = 'https://api.tgdev.io/tgscan/v1/search';
-        const API_KEY = process.env.TG_DEV_API_KEY;
+        const API_KEY = config.TG_DEV_API_KEY;
 
         const formData = new URLSearchParams();
         formData.append('query', query);
@@ -308,6 +309,7 @@ class TelegramService {
                 'Api-Key': API_KEY,
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
+            timeout: 30000, // 30 second timeout — prevents silent hang causing 504 CORS error
         });
 
         if (response.status !== 200) {

@@ -11,6 +11,7 @@ import { asyncHandler } from './utils/asynchandler';
 import { notFound } from './controllers/health.controller';
 import { globalHandler } from './middlewares/error-handler.middleware';
 import rootRouter from './routes/v1.route';
+import config from './config';
 
 const app = express();
 app.set('trust proxy', true); // very important for rate-limiter to trust the x-forwarded-for headers
@@ -18,7 +19,12 @@ app.set('view engine', 'ejs');
 app.set('views', 'src/views');
 
 app.use(express.json({ limit: '8mb' }));
-app.use(cors());
+app.use(cors({
+  origin: config.ALLOWED_ORIGIN,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(xss());
 app.use(helmet({
   contentSecurityPolicy: false,
