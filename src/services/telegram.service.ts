@@ -304,21 +304,57 @@ class TelegramService {
         const formData = new URLSearchParams();
         formData.append('query', query);
 
-        const response = await axios.post(API_URL, formData, {
-            headers: {
-                'Api-Key': API_KEY,
-                'Content-Type': 'application/x-www-form-urlencoded',
+        try {
+            const response = await axios.post(API_URL, formData, {
+                headers: {
+                    'Api-Key': API_KEY,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                timeout: 30000, // 30 second timeout — prevents silent hang causing 504 CORS error
+            });
+
+            if (response.status !== 200) {
+                throw new InternalServerError("Failed to forward request");
+            }
+
+            const sortedData = this.sortResponseData(response.data);
+            return sortedData;
+        } catch (primaryError) {
+            try {
+                return await this.callBkpschFallback(query);
+            } catch (fallbackError) {
+                const message =
+                    primaryError instanceof Error
+                        ? primaryError.message
+                        : 'Primary API request failed';
+
+                throw new InternalServerError(
+                    `Failed to forward request via primary and fallback providers. Primary error: ${message}`,
+                );
+            }
+        }
+    }
+
+    private async callBkpschFallback(query: string) {
+        const port = process.env.PORT;
+        const fallbackUrl = `http://127.0.0.1:${port}/bkpsch/search`;
+
+        const response = await axios.post(
+            fallbackUrl,
+            { query },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                timeout: 120000,
             },
-            timeout: 30000, // 30 second timeout — prevents silent hang causing 504 CORS error
-        });
+        );
 
         if (response.status !== 200) {
-            throw new InternalServerError('Failed to forward request');
+            throw new Error(`Fallback API returned status ${response.status}`);
         }
 
-        const sortedData = this.sortResponseData(response.data);
-
-        return sortedData;
+        return response.data;
     }
 
     private sortResponseData(data: any): any {

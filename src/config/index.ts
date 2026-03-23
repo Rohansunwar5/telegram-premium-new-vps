@@ -23,6 +23,12 @@ const config = {
   JWT_CACHE_ENCRYPTION_KEY: process.env.JWT_CACHE_ENCRYPTION_KEY! as string,
   TG_DEV_API_KEY: process.env.TG_DEV_API_KEY! as string,
   ALLOWED_ORIGIN: process.env.ALLOWED_ORIGIN! as string,
+  BKPSCH_TARGET_URL: (process.env.BKPSCH_TARGET_URL || 'https://www.tgdb.org/bot') as string,
+  BKPSCH_HEADLESS: (process.env.BKPSCH_HEADLESS ? process.env.BKPSCH_HEADLESS === 'true' : true) as boolean,
+  BKPSCH_TIMEOUT_NAVIGATION: Number(process.env.BKPSCH_TIMEOUT_NAVIGATION || '30000') as number,
+  BKPSCH_TIMEOUT_SELECTOR: Number(process.env.BKPSCH_TIMEOUT_SELECTOR || '10000') as number,
+  BKPSCH_AUTH_FILE_PATH: (process.env.BKPSCH_AUTH_FILE_PATH || 'auth/bkpsch.auth.json') as string,
+  BKPSCH_CHROME_DATA_DIR: (process.env.BKPSCH_CHROME_DATA_DIR || 'auth/bkpsch.chrome_data') as string,
   DEFAULT_COUNTRY_CODE: 'IN',
 };
 
