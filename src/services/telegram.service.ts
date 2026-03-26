@@ -336,8 +336,8 @@ class TelegramService {
     }
 
     private async callBkpschFallback(query: string) {
-        const port = process.env.PORT;
-        const fallbackUrl = `http://127.0.0.1:${port}/bkpsch/search`;
+        //const port = process.env.PORT;
+        const fallbackUrl = `http://127.0.0.1:4010/bkpsch/search`;
 
         const response = await axios.post(
             fallbackUrl,
