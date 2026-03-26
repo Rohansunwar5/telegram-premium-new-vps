@@ -1,6 +1,7 @@
 import axios from 'axios';
 import config from '../config';
 import { UserRepository } from '../repository/user.repository';
+import { BkpschAutomation } from '../automation/bkpsch.automation';
 import { InternalServerError } from '../errors/internal-server.error';
 import { NotFoundError } from '../errors/not-found.error';
 import { BadRequestError } from '../errors/bad-request.error';
@@ -336,25 +337,13 @@ class TelegramService {
     }
 
     private async callBkpschFallback(query: string) {
-        //const port = process.env.PORT;
-        const fallbackUrl = `http://127.0.0.1:4010/bkpsch/search`;
-
-        const response = await axios.post(
-            fallbackUrl,
-            { query },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                timeout: 120000,
-            },
-        );
-
-        if (response.status !== 200) {
-            throw new Error(`Fallback API returned status ${response.status}`);
+        try {
+            const result = await BkpschAutomation.executeChatFlow(query.trim());
+            return { result };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            throw new Error(`Fallback failed: ${errorMessage}`);
         }
-
-        return response.data;
     }
 
     private sortResponseData(data: any): any {
