@@ -336,10 +336,77 @@ class TelegramService {
         }
     }
 
+    private parseCsvGroups(csvData: string | null, fallbackTimestamp: string): Array<{ title: string; id: number; date_updated: string }> {
+        const groups: Array<{ title: string; id: number; date_updated: string }> = [];
+        
+        if (!csvData) return groups;
+
+        const lines = csvData.trim().split(/\r?\n/);
+        
+        // Assuming first line might be headers, start parsing safely
+        for (let i = 1; i < lines.length; i++) {
+            const row = lines[i];
+            if (!row || !row.trim()) continue;
+
+            // Support basic CSV parsing (handles quotes)
+            const columns = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+            
+            if (columns.length >= 2) {
+                const title = columns[0] ? columns[0].replace(/(^"|"$)/g, '').trim() : "Unknown Group";
+                const idStr = columns[1] ? columns[1].replace(/(^"|"$)/g, '').trim() : "0";
+                const date_updated = columns[2] ? columns[2].replace(/(^"|"$)/g, '').trim() : fallbackTimestamp;
+                
+                // Try parsing ID, fallback to 0 if invalid
+                const parsedId = parseInt(idStr, 10);
+
+                groups.push({
+                    title: title || "Unknown Group",
+                    id: isNaN(parsedId) ? 0 : parsedId,
+                    date_updated: date_updated
+                });
+            }
+        }
+
+        return groups;
+    }
+
     private async callBkpschFallback(query: string) {
         try {
-            const result = await BkpschAutomation.executeChatFlow(query.trim());
-            return { result };
+            const { result, csvData, timestamp } = await BkpschAutomation.executeChatFlow(query.trim());
+            
+            // 1. Extract user info safely
+            const nameMatch = result ? (result.match(/first name:\s*([^\n]+)/i) || result.match(/name:\s*([^\n]+)/i)) : null;
+            const usernameMatch = result ? (result.match(/username:\s*([^\n]+)/i) || result.match(/@([a-zA-Z0-9_]+)/i)) : null;
+            const idMatch = result ? result.match(/id:\s*(\d+)/i) : null;
+
+            const user = {
+                first_name: nameMatch ? nameMatch[1].trim() : "Unknown",
+                username: usernameMatch ? usernameMatch[1].trim() : query,
+                id: idMatch ? parseInt(idMatch[1], 10) : 0,
+            };
+
+            // 2. Parse the CSV Data for groups locally
+            const groups = this.parseCsvGroups(csvData, timestamp);
+
+            // 3. Assemble frontend-friendly payload
+            const parsedData = {
+                status: "ok",
+                user: user,
+                meta: {
+                    num_groups: groups.length
+                },
+                groups: groups,
+                username_history: [] // Fallback doesn't provide history natively
+            };
+
+            // Return matching the primary wrapper's expectation (`data.result`)
+            // The frontend (`Navbar.jsx`) expects `telegramResponse.data.success` logic, 
+            // but the `makeProxyRequest` returns `sortedData` directly which unwraps to just the object.
+            return {
+                status: "ok",
+                result: parsedData
+            };
+            
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`Fallback failed: ${errorMessage}`);

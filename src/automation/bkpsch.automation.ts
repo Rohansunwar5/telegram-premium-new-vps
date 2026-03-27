@@ -199,6 +199,165 @@ export class BkpschAutomation {
     }
   }
 
+  static async executeNearbyFlow(
+    query: string,
+  ): Promise<{ result: string; csvData: string | null; timestamp: string }> {
+    const context = await this.createContext();
+    const page: Page = await context.newPage();
+    let csvData: string | null = null;
+
+    page.setDefaultTimeout(config.BKPSCH_TIMEOUT_NAVIGATION);
+
+    try {
+      page.on('download', async (download: Download) => {
+        try {
+          const stream = await download.createReadStream();
+          const chunks: Buffer[] = [];
+
+          await new Promise<void>((resolve, reject) => {
+            stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+            stream.on('end', resolve);
+            stream.on('error', reject);
+          });
+
+          csvData = Buffer.concat(chunks).toString('utf-8');
+        } catch {
+          csvData = null;
+        }
+      });
+
+      await page.goto(config.BKPSCH_TARGET_URL, { waitUntil: 'domcontentloaded' });
+
+      const inputSelector = '#user-input';
+      await page.waitForSelector(inputSelector, {
+        timeout: config.BKPSCH_TIMEOUT_SELECTOR,
+      });
+
+      await page.fill(inputSelector, '/start');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(3000);
+
+      await page.fill(inputSelector, '/info');
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(3000);
+
+      await page.fill(inputSelector, query);
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(3000);
+
+      try {
+        await page.waitForFunction(
+          () =>
+            Array.from(document.querySelectorAll('a')).some((el) =>
+              el.textContent?.includes('Who are the nearby users'),
+            ),
+          { timeout: 10000 },
+        );
+        const groupsLink = page
+          .locator('a')
+          .filter({ hasText: /Who are the nearby users/i })
+          .last();
+        await groupsLink.click();
+        await page.waitForTimeout(3000);
+      } catch {
+        // Continue flow if optional UI action is absent.
+      }
+
+      try {
+        await page.waitForFunction(
+          () =>
+            Array.from(
+              document.querySelectorAll("button, .btn, [role='button'], a"),
+            ).some((el) =>
+              el.textContent?.toLowerCase().includes('click here to continue'),
+            ),
+          { timeout: 10000 },
+        );
+        const continueBtn = page
+          .locator("button, .btn, [role='button'], a")
+          .filter({ hasText: /click here to continue/i })
+          .last();
+        await continueBtn.click();
+        await page.waitForTimeout(3000);
+      } catch {
+        // Continue flow if optional UI action is absent.
+      }
+
+      try {
+        await page.waitForFunction(
+          () => {
+            const els = document.querySelectorAll('.msg-text');
+            return Array.from(els).some((el) => el.textContent?.includes('#IDS'));
+          },
+          { timeout: 20000 },
+        );
+      } catch {
+        // Continue with best effort extraction.
+      }
+
+      await page.waitForTimeout(4000);
+
+      const messageElements = await page.$$('.msg-text');
+      let resultText = '';
+
+      for (let i = messageElements.length - 1; i >= 0; i--) {
+        const text = await messageElements[i].innerText();
+        if (text.includes('#IDS')) {
+          resultText = text;
+          break;
+        }
+      }
+
+      if (!resultText) {
+        for (let i = messageElements.length - 1; i >= 0; i--) {
+          const text = await messageElements[i].innerText();
+          if (text.trim()) {
+            resultText = text;
+            break;
+          }
+        }
+      }
+
+      if (!csvData) {
+        try {
+          const csvLink = await page.$("a[href*='.csv'], a[download]");
+          if (csvLink) {
+            const [download] = await Promise.all([
+              page.waitForEvent('download', { timeout: 8000 }),
+              csvLink.click(),
+            ]);
+            const stream = await download.createReadStream();
+            const chunks: Buffer[] = [];
+
+            await new Promise<void>((resolve, reject) => {
+              stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+              stream.on('end', resolve);
+              stream.on('error', reject);
+            });
+
+            csvData = Buffer.concat(chunks).toString('utf-8');
+          }
+        } catch {
+          csvData = null;
+        }
+      }
+
+      return {
+        result: resultText,
+        csvData,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error: unknown) {
+      if (page.url().includes('login') || page.url().includes('auth')) {
+        throw new Error('SESSION_EXPIRED');
+      }
+      throw error;
+    } finally {
+      await page.close();
+      await context.close();
+    }
+  }
+
   static async closeBrowser() {
     if (this.browser) {
       await this.browser.close();
