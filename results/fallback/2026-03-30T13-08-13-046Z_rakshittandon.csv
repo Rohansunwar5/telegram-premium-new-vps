@@ -1,4 +1,0 @@
-EntityID,EntityType,affiliation.network,person.name,affiliation.uid,affiliation.profile-url,affiliation.alias,property.atts31415237681098,LinkID,SourceEntityID,TargetEntityID,maltego.link.manual.type,maltego.link.show-label,maltego.link.color,maltego.link.is_reversed,maltego.link.style,maltego.link.thickness,maltego.link.manual.description,telegram.description
-69ca73514102b,maltego.affiliation.Telegram,Telegram,"Rakshit Tandon",1293530704,t.me/rakshittandon,,,,,,,,,,,,,
-69ca735141035,maltego.affiliation.Telegram,Telegram,"Education n motivation😊",-1001379825037,t.me/rajugolamotivation,,,,,,,,,,,,,"U can only send any msg related to education or motivation nothing else.."
-,,,,,,,,69ca73514103d,69ca73514102b,69ca735141035,"member of",0,,false,-1,-1,,
