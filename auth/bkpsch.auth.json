@@ -1,0 +1,45 @@
+{
+  "cookies": [
+    {
+      "name": "g_state",
+      "value": "{\"i_l\":0,\"i_ll\":1774837154974,\"i_b\":\"57TsQyGbU1NFxelrdQ9pfOV/LUHy6EbiJncFZgYR80M\",\"i_e\":{\"enable_itp_optimization\":0}}",
+      "domain": "www.tgdb.org",
+      "path": "/",
+      "expires": 1790389154,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "tgdb_session",
+      "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJleHAiOjE4MDYzOTQ4MjIsInVzZXJuYW1lIjoidmVnZXRvOCIsImVtYWlsIjoiaGFybGVlbmthdXJvMjAwNkBnbWFpbC5jb20iLCJwYXltZW50c191c2VyaWQiOjIzMDkzNTAsInRlbGVncmFtX2lkIjo2MDY3MzQ4NDI4LCJwZXJtaXNzaW9ucyI6WyJldmVudGJ1c19jbGllbnQiXSwidG9rZW5fdmVyc2lvbiI6NCwiaWF0IjoxNzc0ODM3MjIyLCJpc3MiOiJ0Z2RiLW1vZGVybi1hdXRoLXNlcnZpY2UiLCJzdWIiOiI0M2IwMjljMi01ZmM4LTQxMWQtOGE3OC1lYTgzYzJlOTNmYjAifQ.j4Dfvhg-ZcEWX7NuVpczQSu9HOnWgGxbZiIkNijrWNKOc2Fuj5pMAFkI1-jRLzdXXAV79Gfl5bbQ_JtQhB0wew",
+      "domain": ".www.tgdb.org",
+      "path": "/",
+      "expires": 1806394822.285645,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.l1022141982",
+      "domain": ".tgdb.org",
+      "path": "/",
+      "expires": 1809397222.82028,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga_5Q7XSL5PZ3",
+      "value": "GS2.1.s1774837154$o1$g1$t1774837222$j60$l0$h0",
+      "domain": ".tgdb.org",
+      "path": "/",
+      "expires": 1809397222.830139,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

@@ -4,13 +4,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import config from '../config';
 
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const BKPSCH_AUTH_FILE = path.resolve(
-  process.cwd(),
+  PROJECT_ROOT,
   config.BKPSCH_AUTH_FILE_PATH || 'auth/bkpsch.auth.json',
 );
 const BKPSCH_AUTH_DIR = path.dirname(BKPSCH_AUTH_FILE);
 const BKPSCH_CHROME_DATA_DIR = path.resolve(
-  process.cwd(),
+  PROJECT_ROOT,
   config.BKPSCH_CHROME_DATA_DIR || 'auth/bkpsch.chrome_data',
 );
 

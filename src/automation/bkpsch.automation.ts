@@ -3,8 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import config from '../config';
 
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 const BKPSCH_AUTH_FILE = path.resolve(
-  process.cwd(),
+  PROJECT_ROOT,
   config.BKPSCH_AUTH_FILE_PATH || 'auth/bkpsch.auth.json',
 );
 
@@ -42,10 +43,11 @@ export class BkpschAutomation {
 
   static async executeChatFlow(
     query: string,
-  ): Promise<{ result: string; csvData: string | null; timestamp: string }> {
+  ): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null }> {
     const context = await this.createContext();
     const page: Page = await context.newPage();
     let csvData: string | null = null;
+    let profileText: string | null = null;
 
     page.setDefaultTimeout(config.BKPSCH_TIMEOUT_NAVIGATION);
 
@@ -85,6 +87,30 @@ export class BkpschAutomation {
       await page.fill(inputSelector, query);
       await page.keyboard.press('Enter');
       await page.waitForTimeout(3000);
+
+      try {
+        await page.waitForFunction(
+          () => {
+            const els = document.querySelectorAll('.msg-text');
+            return Array.from(els).some((el) => {
+              const txt = el.textContent || '';
+              return /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
+            });
+          },
+          { timeout: 10000 },
+        );
+      } catch {
+        // Continue flow if profile card is not detected in time.
+      }
+
+      const preActionMessages = await page.$$('.msg-text');
+      for (let i = preActionMessages.length - 1; i >= 0; i--) {
+        const text = await preActionMessages[i].innerText();
+        if (/id\s*:\s*\d+/i.test(text) && (/username\s*:/i.test(text) || /title\s*:/i.test(text))) {
+          profileText = text;
+          break;
+        }
+      }
 
       try {
         await page.waitForFunction(
@@ -187,6 +213,7 @@ export class BkpschAutomation {
         result: resultText,
         csvData,
         timestamp: new Date().toISOString(),
+        profileText,
       };
     } catch (error: unknown) {
       if (page.url().includes('login') || page.url().includes('auth')) {
@@ -201,10 +228,11 @@ export class BkpschAutomation {
 
   static async executeNearbyFlow(
     query: string,
-  ): Promise<{ result: string; csvData: string | null; timestamp: string }> {
+  ): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null }> {
     const context = await this.createContext();
     const page: Page = await context.newPage();
     let csvData: string | null = null;
+    let profileText: string | null = null;
 
     page.setDefaultTimeout(config.BKPSCH_TIMEOUT_NAVIGATION);
 
@@ -244,6 +272,30 @@ export class BkpschAutomation {
       await page.fill(inputSelector, query);
       await page.keyboard.press('Enter');
       await page.waitForTimeout(3000);
+
+      try {
+        await page.waitForFunction(
+          () => {
+            const els = document.querySelectorAll('.msg-text');
+            return Array.from(els).some((el) => {
+              const txt = el.textContent || '';
+              return /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
+            });
+          },
+          { timeout: 10000 },
+        );
+      } catch {
+        // Continue flow if profile card is not detected in time.
+      }
+
+      const preActionMessages = await page.$$('.msg-text');
+      for (let i = preActionMessages.length - 1; i >= 0; i--) {
+        const text = await preActionMessages[i].innerText();
+        if (/id\s*:\s*\d+/i.test(text) && (/username\s*:/i.test(text) || /title\s*:/i.test(text))) {
+          profileText = text;
+          break;
+        }
+      }
 
       try {
         await page.waitForFunction(
@@ -346,6 +398,7 @@ export class BkpschAutomation {
         result: resultText,
         csvData,
         timestamp: new Date().toISOString(),
+        profileText,
       };
     } catch (error: unknown) {
       if (page.url().includes('login') || page.url().includes('auth')) {

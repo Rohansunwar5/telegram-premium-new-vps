@@ -29,6 +29,15 @@ const userSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    clickCount: {
+      type: [{
+        year: Number,
+        month: Number,
+        count: { type: Number, default: 0 },
+        resetAt: Date,
+      }],
+      default: [],
+    },
   },
   { timestamps: true }
 );
@@ -42,6 +51,12 @@ export interface IUser extends mongoose.Schema {
   email: string;
   password: string;
   credits: number;
+  clickCount: Array<{
+    year: number;
+    month: number;
+    count: number;
+    resetAt: Date;
+  }>;
 }
 
 export default mongoose.model<IUser>('User', userSchema);

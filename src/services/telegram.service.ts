@@ -9,6 +9,7 @@ import { UnauthorizedError } from '../errors/unauthorized.error';
 import { ForbiddenError } from '../errors/forbidden.error';
 import { RequestValidationError } from '../errors/request-validation.error';
 import { TooManyRequestsError } from '../errors/too-many-request.error';
+import logger from '../utils/logger';
 
 interface ApiResponse {
     account_used: number;
@@ -319,83 +320,342 @@ class TelegramService {
             }
 
             const sortedData = this.sortResponseData(response.data);
-            return sortedData;
+            const sortedPayload = sortedData as {
+                result?: {
+                    groups?: unknown;
+                    username_history?: unknown;
+                };
+            };
+            const groupsCount = Array.isArray(sortedPayload.result?.groups)
+                ? sortedPayload.result.groups.length
+                : 0;
+            const usernameHistoryCount = Array.isArray(sortedPayload.result?.username_history)
+                ? sortedPayload.result.username_history.length
+                : 0;
+
+            // eslint-disable-next-line no-console
+            console.log(`[ProxyService] Primary response received for query="${query}" groups=${groupsCount} username_history=${usernameHistoryCount}`);
+
+            if (this.isBlankProxyResponse(sortedData)) {
+                // eslint-disable-next-line no-console
+                console.log(`[ProxyService] Primary response considered blank for query="${query}". Triggering fallback.`);
+                logger.warn(`proxyRequest primary provider returned empty result set, invoking fallback. query=${query}`);
+                throw new Error('Primary API returned blank proxy data');
+            }
+
+            return this.withSource(sortedData, 'primary');
         } catch (primaryError) {
+            const primaryErrorMessage =
+                primaryError instanceof Error
+                    ? primaryError.message
+                    : 'Primary API request failed';
+
+            // eslint-disable-next-line no-console
+            console.log(`[ProxyService] Primary failed for query="${query}". Triggering fallback. Error=${primaryErrorMessage}`);
+            logger.warn(`proxyRequest primary provider failed, invoking fallback. query=${query}, error=${primaryErrorMessage}`);
             try {
-                return await this.callBkpschFallback(query);
+                const fallbackResponse = await this.callBkpschFallback(query);
+                // eslint-disable-next-line no-console
+                console.log(`[ProxyService] Fallback succeeded for query="${query}".`);
+                logger.info(`proxyRequest fallback provider succeeded. query=${query}`);
+                return this.withSource(fallbackResponse, 'fallback');
             } catch (fallbackError) {
-                const message =
-                    primaryError instanceof Error
-                        ? primaryError.message
-                        : 'Primary API request failed';
+                const fallbackErrorMessage =
+                    fallbackError instanceof Error
+                        ? fallbackError.message
+                        : 'Fallback API request failed';
+
+                // eslint-disable-next-line no-console
+                console.error(`[ProxyService] Fallback failed for query="${query}". primaryError=${primaryErrorMessage} fallbackError=${fallbackErrorMessage}`);
+                logger.error(
+                    `proxyRequest fallback provider failed. query=${query}, primaryError=${primaryErrorMessage}, fallbackError=${fallbackErrorMessage}`,
+                );
 
                 throw new InternalServerError(
-                    `Failed to forward request via primary and fallback providers. Primary error: ${message}`,
+                    `Failed to forward request via primary and fallback providers. Primary error: ${primaryErrorMessage}`,
                 );
             }
         }
     }
 
-    private parseCsvGroups(csvData: string | null, fallbackTimestamp: string): Array<{ title: string; id: number; date_updated: string }> {
-        const groups: Array<{ title: string; id: number; date_updated: string }> = [];
+    private withSource(data: unknown, source: 'primary' | 'fallback') {
+        if (!data || typeof data !== 'object') {
+            return { source, result: data };
+        }
+
+        return {
+            ...(data as Record<string, unknown>),
+            source,
+        };
+    }
+
+    private isBlankProxyResponse(data: unknown): boolean {
+        if (!data || typeof data !== 'object') {
+            return true;
+        }
+
+        const payload = data as {
+            result?: {
+                groups?: unknown;
+                username_history?: unknown;
+                user?: {
+                    id?: number;
+                    username?: string;
+                    first_name?: string;
+                };
+            };
+        };
+
+        const result = payload.result;
+        if (!result || typeof result !== 'object') {
+            return true;
+        }
+
+        const groups = Array.isArray(result.groups) ? result.groups : [];
+        const usernameHistory = Array.isArray(result.username_history) ? result.username_history : [];
+        return groups.length === 0 && usernameHistory.length === 0;
+    }
+
+    private splitCsvLine(line: string): string[] {
+        const cells: string[] = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+
+            if (ch === '"') {
+                const next = line[i + 1];
+                if (inQuotes && next === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+                continue;
+            }
+
+            if (ch === ',' && !inQuotes) {
+                cells.push(current.trim());
+                current = '';
+                continue;
+            }
+
+            current += ch;
+        }
+
+        cells.push(current.trim());
+        return cells.map((cell) => cell.replace(/(^"|"$)/g, '').trim());
+    }
+
+    private normalizeDate(value: string, fallbackTimestamp: string): string {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString();
+        }
+
+        return fallbackTimestamp;
+    }
+
+    private findHeaderIndex(header: string[], keys: string[]): number {
+        for (const key of keys) {
+            const idx = header.findIndex((col) => col === key);
+            if (idx >= 0) return idx;
+        }
+        return -1;
+    }
+
+    private normalizeTelegramUsername(value: string | null | undefined): string | null {
+        if (!value) return null;
+        const match = String(value).trim().match(/^@?([a-zA-Z0-9_]{3,})$/);
+        return match?.[1] || null;
+    }
+
+    private parseCsvGroups(csvData: string | null, fallbackTimestamp: string): Array<{ title: string; id: string | number; date_updated: string; username?: string }> {
+        const groups: Array<{ title: string; id: string | number; date_updated: string; username?: string }> = [];
         
         if (!csvData) return groups;
 
-        const lines = csvData.trim().split(/\r?\n/);
-        
-        // Assuming first line might be headers, start parsing safely
-        for (let i = 1; i < lines.length; i++) {
-            const row = lines[i];
-            if (!row || !row.trim()) continue;
+        const lines = csvData
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
 
-            // Support basic CSV parsing (handles quotes)
-            const columns = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
-            
-            if (columns.length >= 2) {
-                const title = columns[0] ? columns[0].replace(/(^"|"$)/g, '').trim() : "Unknown Group";
-                const idStr = columns[1] ? columns[1].replace(/(^"|"$)/g, '').trim() : "0";
-                const date_updated = columns[2] ? columns[2].replace(/(^"|"$)/g, '').trim() : fallbackTimestamp;
-                
-                // Try parsing ID, fallback to 0 if invalid
-                const parsedId = parseInt(idStr, 10);
+        if (lines.length === 0) return groups;
 
-                groups.push({
-                    title: title || "Unknown Group",
-                    id: isNaN(parsedId) ? 0 : parsedId,
-                    date_updated: date_updated
-                });
+        const parsedRows = lines.map((line) => this.splitCsvLine(line));
+        const header = parsedRows[0].map((col) => col.toLowerCase());
+        const hasHeader = header.some((col) => /group|title|name|date|updated|id/.test(col));
+        const rows = hasHeader ? parsedRows.slice(1) : parsedRows;
+
+        const titleIdx = hasHeader
+            ? this.findHeaderIndex(header, ['title', 'group', 'group_name', 'person.name', 'name', 'affiliation.alias'])
+            : 0;
+        const usernameIdx = hasHeader
+            ? this.findHeaderIndex(header, ['username', 'group_username', 'telegram_handle', 'handle', 'channel_username', 'affiliation.alias'])
+            : -1;
+        const entityIdIdx = hasHeader
+            ? this.findHeaderIndex(header, ['entityid', 'entity_id'])
+            : -1;
+        const uidIdx = hasHeader
+            ? this.findHeaderIndex(header, ['affiliation.uid', 'uid', 'id', 'group_id', 'chat_id', 'targetentityid', 'sourceentityid'])
+            : 1;
+        const dateIdx = hasHeader
+            ? this.findHeaderIndex(header, ['date_updated', 'updated_at', 'date', 'last_seen', 'time'])
+            : 2;
+
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+            const row = rows[rowIndex];
+            if (!row.length) continue;
+
+            const rawTitle = (titleIdx >= 0 ? row[titleIdx] : row[0]) || '';
+            const rawUsername = usernameIdx >= 0 ? (row[usernameIdx] || '') : '';
+            const rawEntityId = entityIdIdx >= 0 ? (row[entityIdIdx] || '') : '';
+            const rawUid = uidIdx >= 0 ? (row[uidIdx] || '') : '';
+            const rawDate = (dateIdx >= 0 ? row[dateIdx] : row[2]) || fallbackTimestamp;
+            const normalizedUsername = this.normalizeTelegramUsername(rawUsername);
+
+            // Preserve opaque tgdb/maltego IDs (e.g. 69c7dabcba434) exactly as strings.
+            const rawId = rawEntityId || rawUid;
+            if (!rawTitle && !rawId && !normalizedUsername) {
+                continue;
             }
+
+            const parsedId = /^\d+$/.test(rawId) ? Number(rawId) : (rawId || 'unknown');
+
+            groups.push({
+                title: rawTitle || (normalizedUsername || ''),
+                id: parsedId,
+                date_updated: this.normalizeDate(rawDate, fallbackTimestamp),
+                username: normalizedUsername || undefined,
+            });
         }
 
         return groups;
     }
 
+    private extractFallbackGroupMentions(rawText: string): Array<{ title: string; username: string; id?: string }> {
+        const mentions = Array.from(
+            rawText.matchAll(/👥\s*([^\n]+)(?:.|\r|\n){0,220}?@([a-zA-Z0-9_]+)(?:\s*\n\s*#IDS([a-zA-Z0-9_]+))?/g),
+        );
+
+        return mentions.map((match) => ({
+            title: (match[1] || '').trim(),
+            username: (match[2] || '').trim(),
+            id: match[3] ? match[3].trim() : undefined,
+        }));
+    }
+
+    private normalizeFallbackGroups(
+        rawText: string,
+        csvData: string | null,
+        fallbackTimestamp: string,
+        userUsername: string,
+    ): Array<{ title: string; id: string | number; date_updated: string; username: string }> {
+        const csvGroups = this.parseCsvGroups(csvData, fallbackTimestamp);
+        const mentionGroups = this.extractFallbackGroupMentions(rawText);
+        const userHandle = this.normalizeTelegramUsername(userUsername);
+
+        const csvByUsername = new Map<string, { title: string; id: string | number; date_updated: string; username?: string }>();
+        for (const row of csvGroups) {
+            const uname = this.normalizeTelegramUsername(row.username);
+            if (uname && !csvByUsername.has(uname.toLowerCase())) {
+                csvByUsername.set(uname.toLowerCase(), row);
+            }
+        }
+
+        const sourceRows = mentionGroups.length > 0
+            ? mentionGroups.map((item) => ({
+                title: item.title,
+                username: item.username,
+                id: item.id || 'unknown',
+                date_updated: fallbackTimestamp,
+            }))
+            : csvGroups;
+
+        const normalized: Array<{ title: string; id: string | number; date_updated: string; username: string }> = [];
+        const seen = new Set<string>();
+
+        for (const row of sourceRows) {
+            const username = this.normalizeTelegramUsername(row.username);
+            if (!username) continue;
+            if (userHandle && username.toLowerCase() === userHandle.toLowerCase()) continue;
+
+            const lowerUsername = username.toLowerCase();
+            if (seen.has(lowerUsername)) continue;
+
+            const csvMatch = csvByUsername.get(lowerUsername);
+            const titleCandidate = String(row.title || csvMatch?.title || '').trim();
+            if (!titleCandidate || /^group\s+\d+$/i.test(titleCandidate)) {
+                continue;
+            }
+
+            normalized.push({
+                title: titleCandidate,
+                username,
+                id: row.id || csvMatch?.id || 'unknown',
+                date_updated: this.normalizeDate(String(row.date_updated || csvMatch?.date_updated || fallbackTimestamp), fallbackTimestamp),
+            });
+            seen.add(lowerUsername);
+        }
+
+        return normalized;
+    }
+
     private async callBkpschFallback(query: string) {
         try {
-            const { result, csvData, timestamp } = await BkpschAutomation.executeChatFlow(query.trim());
+            const { result, csvData, timestamp, profileText } = await BkpschAutomation.executeChatFlow(query.trim());
+            const userInfoText = [profileText, result].filter((part): part is string => Boolean(part)).join('\n');
             
             // 1. Extract user info safely
-            const nameMatch = result ? (result.match(/first name:\s*([^\n]+)/i) || result.match(/name:\s*([^\n]+)/i)) : null;
-            const usernameMatch = result ? (result.match(/username:\s*([^\n]+)/i) || result.match(/@([a-zA-Z0-9_]+)/i)) : null;
-            const idMatch = result ? result.match(/id:\s*(\d+)/i) : null;
+            const titleMatch = userInfoText ? userInfoText.match(/title:\s*([^\n]+)/i) : null;
+            const nameMatch = userInfoText
+                ? (userInfoText.match(/first name:\s*([^\n]+)/i) || userInfoText.match(/name:\s*([^\n]+)/i) || titleMatch)
+                : null;
+            const usernameLineMatches = userInfoText
+                ? Array.from(userInfoText.matchAll(/username:\s*([^\n]+)/gi)).map((match) => match[1])
+                : [];
+            const idLineMatch = userInfoText ? userInfoText.match(/id:\s*([^\n]+)/i) : null;
+            const numericIdFromLine = idLineMatch?.[1]?.match(/\d{5,}/)?.[0];
+
+            const usernamesFromLine = usernameLineMatches.flatMap((line) =>
+                (line.match(/@[a-zA-Z0-9_]+|[a-zA-Z0-9_]+/g) || []).map((entry) =>
+                    entry.startsWith('@') ? entry : `@${entry}`,
+                ),
+            );
+
+            const usernames = Array.from(
+                new Set(
+                    usernamesFromLine
+                        .map((entry) => entry.trim())
+                        .filter((entry) => entry.length > 1),
+                ),
+            );
 
             const user = {
-                first_name: nameMatch ? nameMatch[1].trim() : "Unknown",
-                username: usernameMatch ? usernameMatch[1].trim() : query,
-                id: idMatch ? parseInt(idMatch[1], 10) : 0,
+                first_name: nameMatch ? nameMatch[1].trim() : 'Unknown',
+                title: titleMatch ? titleMatch[1].trim() : (nameMatch ? nameMatch[1].trim() : 'Unknown'),
+                username: usernames.length > 0 ? usernames[0] : query,
+                usernames,
+                id: numericIdFromLine ? Number(numericIdFromLine) : null,
             };
 
-            // 2. Parse the CSV Data for groups locally
-            const groups = this.parseCsvGroups(csvData, timestamp);
+            // 2. Normalize fallback groups so title/username pairs are consistent for frontend links.
+            const groupsWithUsernames = this.normalizeFallbackGroups(
+                userInfoText || result || '',
+                csvData,
+                timestamp,
+                user.username,
+            );
 
             // 3. Assemble frontend-friendly payload
             const parsedData = {
                 status: "ok",
                 user: user,
                 meta: {
-                    num_groups: groups.length
+                    num_groups: groupsWithUsernames.length
                 },
-                groups: groups,
+                groups: groupsWithUsernames,
                 username_history: [] // Fallback doesn't provide history natively
             };
 

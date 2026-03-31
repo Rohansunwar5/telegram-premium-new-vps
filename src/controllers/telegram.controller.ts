@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import telegramService from "../services/telegram.service";
 import axios from "axios";
+import logger from "../utils/logger";
 
 export const searchChannels = async (req: Request, res: Response, next: NextFunction) => {
     const { search_query } = req.body;
@@ -27,14 +28,19 @@ export const proxyRequest = async (req: Request, res: Response, next: NextFuncti
     try {
         const { query } = req.body;
         const userId = req.user?._id;
+        logger.info(`proxyRequest controller called. userId=${userId}, query=${query ?? ''}`);
 
         if (!query) {
+            logger.warn(`proxyRequest validation failed: missing query. userId=${userId}`);
             return res.status(400).json({ error: 'Query parameter is required' });
         }
 
         const response = await telegramService.makeProxyRequest(userId.toString(), query);
+        logger.info(`proxyRequest controller success. userId=${userId}`);
         res.json(response);
     } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`proxyRequest controller error. userId=${req.user?._id}, error=${message}`);
         next(error);
     }
 };
@@ -102,7 +108,7 @@ export const tgDev = async (req: Request, res: Response, next: NextFunction) => 
             
         res.json(response.data);
     } catch (error:any) {
-        console.error('Proxy error:', error);
+        logger.error(`tgDev proxy error: ${error?.message || String(error)}`);
         res.status(500).json({ error: error.message });
     }
 

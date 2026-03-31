@@ -1,0 +1,37 @@
+{
+  "query": "ashishk244",
+  "timestamp": "2026-03-30T13:48:18.383Z",
+  "rawResult": "👤Ashish Kumar\n@ashishk244\n#IDU7068511811\n\n🆔 ID: 7068511811\n👤 Type: User\n🏷 Title: Ashish Kumar\n📧 Username: @ashishk244 \n\n➡ What groups is the user a member of?\n➡ Who are the nearby users?\nResults for \n👤Ashish Kumar\n\n\n👥DVxUI Community\n1,080 members\n@dvxuicommunity\n#IDS2173683675\n👥Ethical Hacking Tutorials\n18,406 members\n@ethicalhackx_101\n#IDS1847805256\n👥Security Engineers\n2,454 members\n@ethicalhackx_01\n#IDS1622029839\n👥DATA SCIENCE\n2,979 members\n@Datasciencebeginners\n#IDS1532700862\n👥Placement phodenge(Saumya Awasthi) 😎\n9,934 members\n@placement_phodenge\n#IDS1468012306\n\n➡ Who are the nearby users?",
+  "parsedGroups": [
+    {
+      "title": "DVxUI Community",
+      "username": "dvxuicommunity",
+      "id": "2173683675",
+      "date_updated": "2026-03-30T13:48:18.383Z"
+    },
+    {
+      "title": "Ethical Hacking Tutorials",
+      "username": "ethicalhackx_101",
+      "id": "1847805256",
+      "date_updated": "2026-03-30T13:48:18.383Z"
+    },
+    {
+      "title": "Security Engineers",
+      "username": "ethicalhackx_01",
+      "id": "1622029839",
+      "date_updated": "2026-03-30T13:48:18.383Z"
+    },
+    {
+      "title": "DATA SCIENCE",
+      "username": "Datasciencebeginners",
+      "id": "1532700862",
+      "date_updated": "2026-03-30T13:48:18.383Z"
+    },
+    {
+      "title": "Placement phodenge(Saumya Awasthi) 😎",
+      "username": "placement_phodenge",
+      "id": "1468012306",
+      "date_updated": "2026-03-30T13:48:18.383Z"
+    }
+  ]
+}
