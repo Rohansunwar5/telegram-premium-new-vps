@@ -170,6 +170,9 @@ function transformChannelAnalysisToBookmarkFormat(apiResponse: ApiResponse): Tra
 
 class TelegramService {
     private readonly CREDITS_PER_REQUEST = 1;
+    private readonly BKPSCH_FALLBACK_TIMEOUT_MS = 120000;
+    private readonly BKPSCH_FALLBACK_RETRY_DELAY_MS = 2500;
+    private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 2;
     
     constructor(private readonly _userRepository: UserRepository) {}
 
@@ -358,7 +361,20 @@ class TelegramService {
                 // eslint-disable-next-line no-console
                 console.log(`[ProxyService] Fallback succeeded for query="${query}".`);
                 logger.info(`proxyRequest fallback provider succeeded. query=${query}`);
-                return this.withSource(fallbackResponse, 'fallback');
+
+                if (!this.isBlankProxyResponse(fallbackResponse)) {
+                    return this.withSource(fallbackResponse, 'fallback');
+                }
+
+                logger.warn(`proxyRequest fallback provider returned blank data, retrying once. query=${query}`);
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+
+                const retryFallbackResponse = await this.callBkpschFallback(query);
+                if (!this.isBlankProxyResponse(retryFallbackResponse)) {
+                    return this.withSource(retryFallbackResponse, 'fallback');
+                }
+
+                throw new Error('Fallback API returned blank data after retry');
             } catch (fallbackError) {
                 const fallbackErrorMessage =
                     fallbackError instanceof Error
@@ -604,7 +620,7 @@ class TelegramService {
 
     private async callBkpschFallback(query: string) {
         try {
-            const { result, csvData, timestamp, profileText } = await BkpschAutomation.executeChatFlow(query.trim());
+            const { result, csvData, timestamp, profileText } = await this.executeBkpschWithTimeoutAndRetry(query.trim());
             const userInfoText = [profileText, result].filter((part): part is string => Boolean(part)).join('\n');
             
             // 1. Extract user info safely
@@ -671,6 +687,37 @@ class TelegramService {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`Fallback failed: ${errorMessage}`);
         }
+    }
+
+    private async executeBkpschWithTimeoutAndRetry(query: string): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null }> {
+        let lastError: unknown;
+
+        for (let attempt = 1; attempt <= this.BKPSCH_FALLBACK_MAX_ATTEMPTS; attempt += 1) {
+            try {
+                const timeoutPromise = new Promise<never>((_, reject) => {
+                    setTimeout(() => {
+                        reject(new Error(`BKPSCH automation timed out after ${this.BKPSCH_FALLBACK_TIMEOUT_MS}ms`));
+                    }, this.BKPSCH_FALLBACK_TIMEOUT_MS);
+                });
+
+                const result = await Promise.race([
+                    BkpschAutomation.executeChatFlow(query),
+                    timeoutPromise,
+                ]);
+
+                return result;
+            } catch (error) {
+                lastError = error;
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.warn(`BKPSCH fallback attempt ${attempt}/${this.BKPSCH_FALLBACK_MAX_ATTEMPTS} failed. query=${query}, error=${errorMessage}`);
+
+                if (attempt < this.BKPSCH_FALLBACK_MAX_ATTEMPTS) {
+                    await new Promise((resolve) => setTimeout(resolve, this.BKPSCH_FALLBACK_RETRY_DELAY_MS));
+                }
+            }
+        }
+
+        throw lastError instanceof Error ? lastError : new Error('BKPSCH fallback failed after retries');
     }
 
     private sortResponseData(data: any): any {
