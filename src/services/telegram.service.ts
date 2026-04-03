@@ -170,11 +170,83 @@ function transformChannelAnalysisToBookmarkFormat(apiResponse: ApiResponse): Tra
 
 class TelegramService {
     private readonly CREDITS_PER_REQUEST = 1;
-    private readonly BKPSCH_FALLBACK_TIMEOUT_MS = 120000;
-    private readonly BKPSCH_FALLBACK_RETRY_DELAY_MS = 2500;
-    private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 2;
+    private readonly PROXY_REQUEST_TOTAL_TIMEOUT_MS = Math.min(
+        Number(process.env.PROXY_REQUEST_TOTAL_TIMEOUT_MS || 25000),
+        25000,
+    );
+    private readonly BKPSCH_FALLBACK_TIMEOUT_MS = Number(process.env.BKPSCH_FALLBACK_TIMEOUT_MS || 25000);
+    private readonly BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS = Math.min(
+        Number(process.env.BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS || 25000),
+        25000,
+    );
+    private readonly BKPSCH_FALLBACK_RETRY_DELAY_MS = Number(process.env.BKPSCH_FALLBACK_RETRY_DELAY_MS || 0);
+    private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 1;
     
     constructor(private readonly _userRepository: UserRepository) {}
+
+    private normalizeLookupValue(value: string | null | undefined): string {
+        return String(value || '')
+            .trim()
+            .replace(/^@+/, '')
+            .toLowerCase();
+    }
+
+    private extractUsernameCandidates(value: string | null | undefined): string[] {
+        const text = String(value || '').trim();
+        if (!text) return [];
+
+        const candidates = Array.from(text.matchAll(/@([a-zA-Z0-9_]{3,})/g)).map((match) => match[1].toLowerCase());
+        const directMatch = text.match(/^@?([a-zA-Z0-9_]{3,})$/);
+        if (directMatch?.[1]) {
+            candidates.push(directMatch[1].toLowerCase());
+        }
+
+        return Array.from(new Set(candidates));
+    }
+
+    private validateFallbackPayload(
+        validation: { query: string; normalizedQuery: string; requestId: string },
+        csvData: string | null,
+        extractedTitle: string | null | undefined,
+        user: { title: string; username: string; usernames: string[] },
+        userInfoText: string,
+    ) {
+        const normalizedExtractedTitle = String(extractedTitle || '').trim();
+        const normalizedUsernames = Array.from(
+            new Set(
+                [
+                    ...this.extractUsernameCandidates(user.username),
+                    ...this.extractUsernameCandidates(userInfoText),
+                    ...(Array.isArray(user.usernames) ? user.usernames.flatMap((item) => this.extractUsernameCandidates(item)) : []),
+                ]
+                    .map((item) => this.normalizeLookupValue(item))
+                    .filter(Boolean),
+            ),
+        );
+
+        if (!normalizedUsernames.includes(validation.normalizedQuery)) {
+            logger.warn(
+                `Fallback validation failed: requestId=${validation.requestId} query=${validation.query} queryUsername=${validation.normalizedQuery} returnedUsernames=${normalizedUsernames.join(',')}`,
+            );
+            throw new Error('Requested account does not provide accessible Telegram data');
+        }
+
+        if (normalizedExtractedTitle && csvData) {
+            const csvLines = csvData.split(/\r?\n/).filter((line) => line.trim());
+            if (csvLines.length > 0) {
+                const firstLine = csvLines[0];
+                const csvTitleMatch = firstLine.match(/Results for\s*👤\s*([^\n]+?)(?:\s*$|\s*[,\t])/i);
+                const csvTitle = csvTitleMatch ? csvTitleMatch[1].trim() : null;
+
+                if (csvTitle && normalizedExtractedTitle.toLowerCase() !== csvTitle.toLowerCase()) {
+                    logger.warn(
+                        `Title validation failed: requestId=${validation.requestId} query=${validation.query} expectedTitle=${normalizedExtractedTitle} csvTitle=${csvTitle}`,
+                    );
+                    throw new Error('Requested account does not provide accessible Telegram data');
+                }
+            }
+        }
+    }
 
     async searchChannels(searchQuery: string) {
         const response = await axios.post(
@@ -305,6 +377,12 @@ class TelegramService {
     async proxyRequest(query: string) {
         const API_URL = 'https://api.tgdev.io/tgscan/v1/search';
         const API_KEY = config.TG_DEV_API_KEY;
+        const startedAt = Date.now();
+        const validationContext = {
+            query,
+            normalizedQuery: this.normalizeLookupValue(query),
+            requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        };
 
         const formData = new URLSearchParams();
         formData.append('query', query);
@@ -315,7 +393,7 @@ class TelegramService {
                     'Api-Key': API_KEY,
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                timeout: 30000, // 30 second timeout — prevents silent hang causing 504 CORS error
+                timeout: this.PROXY_REQUEST_TOTAL_TIMEOUT_MS,
             });
 
             if (response.status !== 200) {
@@ -357,7 +435,12 @@ class TelegramService {
             console.log(`[ProxyService] Primary failed for query="${query}". Triggering fallback. Error=${primaryErrorMessage}`);
             logger.warn(`proxyRequest primary provider failed, invoking fallback. query=${query}, error=${primaryErrorMessage}`);
             try {
-                const fallbackResponse = await this.callBkpschFallback(query);
+                const remainingBudgetMs = this.PROXY_REQUEST_TOTAL_TIMEOUT_MS - (Date.now() - startedAt);
+                if (remainingBudgetMs <= 0) {
+                    throw new Error(`Request timed out after ${this.PROXY_REQUEST_TOTAL_TIMEOUT_MS}ms`);
+                }
+
+                const fallbackResponse = await this.callBkpschFallback(query, validationContext, remainingBudgetMs);
                 // eslint-disable-next-line no-console
                 console.log(`[ProxyService] Fallback succeeded for query="${query}".`);
                 logger.info(`proxyRequest fallback provider succeeded. query=${query}`);
@@ -365,16 +448,7 @@ class TelegramService {
                 if (!this.isBlankProxyResponse(fallbackResponse)) {
                     return this.withSource(fallbackResponse, 'fallback');
                 }
-
-                logger.warn(`proxyRequest fallback provider returned blank data, retrying once. query=${query}`);
-                await new Promise((resolve) => setTimeout(resolve, 1500));
-
-                const retryFallbackResponse = await this.callBkpschFallback(query);
-                if (!this.isBlankProxyResponse(retryFallbackResponse)) {
-                    return this.withSource(retryFallbackResponse, 'fallback');
-                }
-
-                throw new Error('Fallback API returned blank data after retry');
+                throw new Error('Fallback API returned blank data');
             } catch (fallbackError) {
                 const fallbackErrorMessage =
                     fallbackError instanceof Error
@@ -430,6 +504,83 @@ class TelegramService {
         const groups = Array.isArray(result.groups) ? result.groups : [];
         const usernameHistory = Array.isArray(result.username_history) ? result.username_history : [];
         return groups.length === 0 && usernameHistory.length === 0;
+    }
+
+    private validatePrimaryPayloadMatchesQuery(
+        data: unknown,
+        validation: { query: string; normalizedQuery: string; requestId: string },
+    ): void {
+        if (!data || typeof data !== 'object') {
+            throw new Error('Primary API returned invalid data');
+        }
+
+        const payload = data as {
+            result?: {
+                user?: {
+                    id?: string | number;
+                    username?: string;
+                    usernames?: string[];
+                };
+                username_history?: Array<{ username?: string; text?: string; link?: string }>;
+                groups?: Array<{ username?: string; link?: string; title?: string }>;
+            };
+        };
+
+        const normalizedQuery = this.normalizeLookupValue(validation.normalizedQuery || validation.query);
+        if (!normalizedQuery) {
+            return;
+        }
+
+        const user = payload.result?.user;
+        const userId = String(user?.id || '').trim();
+        if (/^\d+$/.test(normalizedQuery) && userId && normalizedQuery === userId) {
+            return;
+        }
+
+        const usernameHistory = Array.isArray(payload.result?.username_history)
+            ? payload.result?.username_history
+            : [];
+        const groups = Array.isArray(payload.result?.groups)
+            ? payload.result?.groups
+            : [];
+
+        const normalizedCandidates = Array.from(
+            new Set(
+                [
+                    ...this.extractUsernameCandidates(user?.username),
+                    ...(Array.isArray(user?.usernames)
+                        ? user.usernames.flatMap((value) => this.extractUsernameCandidates(value))
+                        : []),
+                    ...usernameHistory.flatMap((entry) =>
+                        this.extractUsernameCandidates([
+                            entry?.username,
+                            entry?.text,
+                            entry?.link,
+                        ]
+                            .filter(Boolean)
+                            .join(' ')),
+                    ),
+                    ...groups.flatMap((entry) =>
+                        this.extractUsernameCandidates([
+                            entry?.username,
+                            entry?.link,
+                            entry?.title,
+                        ]
+                            .filter(Boolean)
+                            .join(' ')),
+                    ),
+                ]
+                    .map((value) => this.normalizeLookupValue(value))
+                    .filter(Boolean),
+            ),
+        );
+
+        if (!normalizedCandidates.includes(normalizedQuery)) {
+            logger.warn(
+                `Primary validation failed: requestId=${validation.requestId} query=${validation.query} queryUsername=${normalizedQuery} returnedUsernames=${normalizedCandidates.join(',')}`,
+            );
+            throw new Error('Primary API returned mismatched data');
+        }
     }
 
     private splitCsvLine(line: string): string[] {
@@ -580,47 +731,76 @@ class TelegramService {
             }
         }
 
-        const sourceRows = mentionGroups.length > 0
-            ? mentionGroups.map((item) => ({
-                title: item.title,
-                username: item.username,
-                id: item.id || 'unknown',
-                date_updated: fallbackTimestamp,
-            }))
-            : csvGroups;
+        const mentionRows = mentionGroups.map((item) => ({
+            title: item.title,
+            username: item.username,
+            id: item.id || 'unknown',
+            date_updated: fallbackTimestamp,
+        }));
+
+        const csvRows = csvGroups.map((item) => ({
+            title: item.title,
+            username: item.username || '',
+            id: item.id || 'unknown',
+            date_updated: item.date_updated || fallbackTimestamp,
+        }));
+
+        // Merge both sources so we keep all groups visible in UI.
+        const sourceRows = [...mentionRows, ...csvRows];
 
         const normalized: Array<{ title: string; id: string | number; date_updated: string; username: string }> = [];
         const seen = new Set<string>();
 
-        for (const row of sourceRows) {
+        for (let rowIndex = 0; rowIndex < sourceRows.length; rowIndex += 1) {
+            const row = sourceRows[rowIndex];
             const username = this.normalizeTelegramUsername(row.username);
-            if (!username) continue;
-            if (userHandle && username.toLowerCase() === userHandle.toLowerCase()) continue;
+            const lowerUsername = username ? username.toLowerCase() : '';
+            const csvMatch = lowerUsername ? csvByUsername.get(lowerUsername) : undefined;
+            const rawId = String(row.id || csvMatch?.id || '').trim();
+            const titleCandidate = String(
+                row.title ||
+                csvMatch?.title ||
+                username ||
+                rawId ||
+                `Group ${rowIndex + 1}`,
+            ).trim();
 
-            const lowerUsername = username.toLowerCase();
-            if (seen.has(lowerUsername)) continue;
-
-            const csvMatch = csvByUsername.get(lowerUsername);
-            const titleCandidate = String(row.title || csvMatch?.title || '').trim();
-            if (!titleCandidate || /^group\s+\d+$/i.test(titleCandidate)) {
+            // Show only complete groups that have both title and username.
+            if (!username || !titleCandidate) {
                 continue;
             }
 
+            if (username && userHandle && username.toLowerCase() === userHandle.toLowerCase()) {
+                continue;
+            }
+
+            const dedupeKey = username
+                ? `username:${username.toLowerCase()}`
+                : `row:${titleCandidate.toLowerCase()}|${rawId.toLowerCase()}`;
+            if (seen.has(dedupeKey)) continue;
+
             normalized.push({
                 title: titleCandidate,
-                username,
-                id: row.id || csvMatch?.id || 'unknown',
+                username: username || '',
+                id: row.id || csvMatch?.id || rawId || `unknown-${rowIndex + 1}`,
                 date_updated: this.normalizeDate(String(row.date_updated || csvMatch?.date_updated || fallbackTimestamp), fallbackTimestamp),
             });
-            seen.add(lowerUsername);
+            seen.add(dedupeKey);
         }
 
         return normalized;
     }
 
-    private async callBkpschFallback(query: string) {
+    private async callBkpschFallback(
+        query: string,
+        validation: { query: string; normalizedQuery: string; requestId: string },
+        maxBudgetMs?: number,
+    ) {
         try {
-            const { result, csvData, timestamp, profileText } = await this.executeBkpschWithTimeoutAndRetry(query.trim());
+            const { result, csvData, timestamp, profileText, extractedTitle } = await this.executeBkpschWithTimeoutAndRetry(
+                query.trim(),
+                maxBudgetMs,
+            );
             const userInfoText = [profileText, result].filter((part): part is string => Boolean(part)).join('\n');
             
             // 1. Extract user info safely
@@ -656,7 +836,9 @@ class TelegramService {
                 id: numericIdFromLine ? Number(numericIdFromLine) : null,
             };
 
-            // 2. Normalize fallback groups so title/username pairs are consistent for frontend links.
+            this.validateFallbackPayload(validation, csvData, extractedTitle, user, userInfoText);
+            
+            // 3. Normalize fallback groups so title/username pairs are consistent for frontend links.
             const groupsWithUsernames = this.normalizeFallbackGroups(
                 userInfoText || result || '',
                 csvData,
@@ -664,7 +846,7 @@ class TelegramService {
                 user.username,
             );
 
-            // 3. Assemble frontend-friendly payload
+            // 4. Assemble frontend-friendly payload
             const parsedData = {
                 status: "ok",
                 user: user,
@@ -689,15 +871,31 @@ class TelegramService {
         }
     }
 
-    private async executeBkpschWithTimeoutAndRetry(query: string): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null }> {
+    private async executeBkpschWithTimeoutAndRetry(
+        query: string,
+        maxBudgetMs?: number,
+    ): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null; extractedTitle?: string }> {
         let lastError: unknown;
+        const startedAt = Date.now();
+        const totalBudgetMs = Math.min(
+            this.BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS,
+            typeof maxBudgetMs === 'number' ? maxBudgetMs : this.BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS,
+        );
 
         for (let attempt = 1; attempt <= this.BKPSCH_FALLBACK_MAX_ATTEMPTS; attempt += 1) {
             try {
+                const elapsedMs = Date.now() - startedAt;
+                const remainingBudgetMs = totalBudgetMs - elapsedMs;
+
+                if (remainingBudgetMs <= 0) {
+                    throw new Error(`BKPSCH automation timed out after ${totalBudgetMs}ms`);
+                }
+
+                const attemptTimeoutMs = Math.min(this.BKPSCH_FALLBACK_TIMEOUT_MS, remainingBudgetMs);
                 const timeoutPromise = new Promise<never>((_, reject) => {
                     setTimeout(() => {
-                        reject(new Error(`BKPSCH automation timed out after ${this.BKPSCH_FALLBACK_TIMEOUT_MS}ms`));
-                    }, this.BKPSCH_FALLBACK_TIMEOUT_MS);
+                        reject(new Error(`BKPSCH automation timed out after ${totalBudgetMs}ms`));
+                    }, attemptTimeoutMs);
                 });
 
                 const result = await Promise.race([
@@ -712,7 +910,13 @@ class TelegramService {
                 logger.warn(`BKPSCH fallback attempt ${attempt}/${this.BKPSCH_FALLBACK_MAX_ATTEMPTS} failed. query=${query}, error=${errorMessage}`);
 
                 if (attempt < this.BKPSCH_FALLBACK_MAX_ATTEMPTS) {
-                    await new Promise((resolve) => setTimeout(resolve, this.BKPSCH_FALLBACK_RETRY_DELAY_MS));
+                    const retryDelayMs = Math.min(
+                        this.BKPSCH_FALLBACK_RETRY_DELAY_MS,
+                        Math.max(totalBudgetMs - (Date.now() - startedAt), 0),
+                    );
+                    if (retryDelayMs > 0) {
+                        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+                    }
                 }
             }
         }
