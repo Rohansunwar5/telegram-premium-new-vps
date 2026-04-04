@@ -1,120 +1,22 @@
-import { chromium, Browser, BrowserContext, Download, Page } from 'playwright';
-import fs from 'fs';
-import path from 'path';
+import { Download, Page } from 'playwright';
 import config from '../config';
-
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
-const BKPSCH_AUTH_FILE = path.resolve(
-  PROJECT_ROOT,
-  config.BKPSCH_AUTH_FILE_PATH || 'auth/bkpsch.auth.json',
-);
+import { createContext, sendChatMessage, waitForMessageStreamSettle, closeBrowser } from './utils/browser.utils';
+import { normalizeLookupValue, messageMatchesQuery } from './utils/validation.utils';
 
 export class BkpschAutomation {
-  private static browser: Browser | null = null;
   private static readonly RESULT_WAIT_TIMEOUT_MS = 25000;
 
-  private static normalizeLookupValue(value: string): string {
-    return String(value || '')
-      .trim()
-      .replace(/^@+/, '')
-      .toLowerCase();
-  }
-
-  private static messageMatchesQuery(text: string, normalizedQuery: string, queryIsNumeric: boolean): boolean {
-    if (!normalizedQuery) return true;
-
-    const normalizedText = String(text || '').toLowerCase();
-    if (queryIsNumeric) {
-      return new RegExp(`id\\s*:\\s*${normalizedQuery}\\b`, 'i').test(normalizedText);
-    }
-
-    const handleMatches = Array.from(normalizedText.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
-    if (handleMatches.includes(normalizedQuery)) {
-      return true;
-    }
-
-    const usernameLine = normalizedText.match(/username\s*:\s*([^\n]+)/i)?.[1] || '';
-    if (usernameLine.includes(normalizedQuery)) {
-      return true;
-    }
-
-    const titleLine = normalizedText.match(/title\s*:\s*([^\n]+)/i)?.[1] || '';
-    return titleLine.includes(normalizedQuery);
-  }
-
-  private static async waitForMessageStreamSettle(
-    page: Page,
-    baselineCount: number,
-    timeoutMs = 6000,
-    stableMs = 1000,
-  ): Promise<void> {
-    const startedAt = Date.now();
-    let lastSignature = '';
-    let stableForMs = 0;
-
-    while (Date.now() - startedAt < timeoutMs) {
-      const snapshot = await page.evaluate((baseline) => {
-        const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(baseline));
-        const count = els.length;
-        const lastText = count > 0 ? ((els[count - 1].textContent || '').trim()) : '';
-        return `${count}|${lastText}`;
-      }, baselineCount);
-
-      if (snapshot === lastSignature) {
-        stableForMs += 200;
-        if (stableForMs >= stableMs) {
-          return;
-        }
-      } else {
-        lastSignature = snapshot;
-        stableForMs = 0;
-      }
-
-      await page.waitForTimeout(200);
-    }
-  }
-
-  private static async sendChatMessage(page: Page, inputSelector: string, text: string) {
-    const input = page.locator(inputSelector).first();
-    await input.click();
-    await input.fill(text);
-    await input.press('Enter');
-    await page.waitForTimeout(150);
-  }
-
-  static async initBrowser(): Promise<Browser> {
-    if (!this.browser) {
-      this.browser = await chromium.launch({
-        headless: config.BKPSCH_HEADLESS,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-blink-features=AutomationControlled',
-        ],
-      });
-    }
-
-    return this.browser;
-  }
-
-  static async createContext(): Promise<BrowserContext> {
-    const browser = await this.initBrowser();
-    const contextOptions: Parameters<Browser['newContext']>[0] = {
-      userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    };
-
-    if (fs.existsSync(BKPSCH_AUTH_FILE)) {
-      contextOptions.storageState = BKPSCH_AUTH_FILE;
-    }
-
-    return browser.newContext(contextOptions);
-  }
-
+  /**
+   * Main entry flow for executing generalized chat automation, searching for a user/channel/info target.
+   * Leverages exact matcher scripts to inherently skip empty or incorrect target results seamlessly.
+   * Ensures the query we searched matches the EXACT title/username produced by the bot.
+   * @param query Target username or ID to lookup against.
+   * @returns Resolves a destructured object containing scraped content like .csvData, timestamp, extractedTitle, etc.
+   */
   static async executeChatFlow(
     query: string,
   ): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null; extractedTitle?: string }> {
-    const context = await this.createContext();
+    const context = await createContext();
     const page: Page = await context.newPage();
     let csvData: string | null = null;
     let profileText: string | null = null;
@@ -133,7 +35,7 @@ export class BkpschAutomation {
             stream.on('error', reject);
           });
 
-          csvData = Buffer.concat(chunks).toString('utf-8');
+          csvData = Buffer.concat(chunks as any).toString('utf-8');
         } catch {
           csvData = null;
         }
@@ -141,28 +43,99 @@ export class BkpschAutomation {
 
       await page.goto(config.BKPSCH_TARGET_URL, { waitUntil: 'domcontentloaded' });
 
+      // Identify bot input form and wait for readiness
       const inputSelector = '#user-input';
       await page.waitForSelector(inputSelector, {
         timeout: config.BKPSCH_TIMEOUT_SELECTOR,
       });
 
       const baselineMessageCount = await page.locator('.msg-text').count();
-      const normalizedQuery = this.normalizeLookupValue(query);
+      const normalizedQuery = normalizeLookupValue(query);
       const queryIsNumeric = /^\d+$/.test(normalizedQuery);
 
-      await this.sendChatMessage(page, inputSelector, '/info');
-      await this.sendChatMessage(page, inputSelector, query);
+      await sendChatMessage(page, inputSelector, '/info');
+      await sendChatMessage(page, inputSelector, query);
+
+      // --- NEW: WAIT FOR BOT ACKNOWLEDGEMENT ---
+      // Ensures we don't scan old messages before the bot even appends new ones.
+      try {
+        await page.waitForFunction(
+          (baseline) => document.querySelectorAll('.msg-text').length > Number(baseline),
+          baselineMessageCount,
+          { timeout: 8000 }
+        );
+      } catch (e) {
+        // If count didn't increase, the bot might be stuck or query didn't send.
+        // We'll proceed to validation anyway which will likely fail/timeout safely.
+      }
+
+      // --- DOM LEVEL VALIDATION ---
+      // We pass explicit rules to Playwright evaluate wrapper to securely identify our specified query.
+      // E.g. Query 'rohan' shouldn't mistakenly scrape 'rohan_22'.
+      const validationResult = await page.evaluate(
+        (args: { baseline: number; normalized: string; isNumeric: boolean }) => {
+          const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(args.baseline));
+
+          for (const el of els) {
+            const txt = (el.textContent || '').toLowerCase();
+
+            // 1. Immediately abort if the bot specifically says 'no results for this search'
+            if (txt.includes('there are no results for this search') || txt.includes('no results found')) {
+              return { success: false, noResults: true };
+            }
+
+            const hasProfile = /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
+            if (!hasProfile) continue;
+
+            // Proceed automatically if search query wasn't strictly provided
+            if (!args.normalized) return { success: true };
+
+            if (args.isNumeric) {
+              if (new RegExp(`id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt)) return { success: true };
+              continue;
+            }
+
+            const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
+            if (handles.includes(args.normalized)) return { success: true };
+
+            const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
+            if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) {
+              return { success: true };
+            }
+
+            const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
+            if (titleLine === args.normalized) return { success: true };
+          }
+          return null; // Not found yet
+        },
+        {
+          baseline: baselineMessageCount,
+          normalized: normalizedQuery,
+          isNumeric: queryIsNumeric,
+        }
+      );
+
+      if (validationResult?.noResults) {
+        throw new Error('TGDB_NO_RESULTS');
+      }
 
       try {
         await page.waitForFunction(
           (args: { baseline: number; normalized: string; isNumeric: boolean }) => {
             const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(args.baseline));
+
             return els.some((el) => {
               const txt = (el.textContent || '').toLowerCase();
+
+              if (txt.includes('there are no results for this search') || txt.includes('no results found')) {
+                return true; // We return true to stop the wait, but we'll check value below
+              }
+
               const hasProfile = /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
               if (!hasProfile) return false;
 
               if (!args.normalized) return true;
+
               if (args.isNumeric) {
                 return new RegExp(`id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt);
               }
@@ -170,11 +143,13 @@ export class BkpschAutomation {
               const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
               if (handles.includes(args.normalized)) return true;
 
-              const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1] || '';
-              if (usernameLine.includes(args.normalized)) return true;
+              const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
+              if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) {
+                return true;
+              }
 
-              const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1] || '';
-              return titleLine.includes(args.normalized);
+              const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
+              return titleLine === args.normalized;
             });
           },
           {
@@ -185,20 +160,32 @@ export class BkpschAutomation {
           { timeout: this.RESULT_WAIT_TIMEOUT_MS },
         );
       } catch {
-        // Continue flow if profile card is not detected in time.
+        // Validation timeout
       }
 
-      const preActionMessages = await page.$$('.msg-text');
-      for (let i = preActionMessages.length - 1; i >= baselineMessageCount; i--) {
-        const text = await preActionMessages[i].innerText();
+      // Re-verify after wait
+      const finalMessages = await page.$$('.msg-text');
+      let foundNoResults = false;
+      for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
+        const text = await finalMessages[i].innerText();
+        const lowText = text.toLowerCase();
+        if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
+          foundNoResults = true;
+          break;
+        }
+
         if (/id\s*:\s*\d+/i.test(text)
           && (/username\s*:/i.test(text) || /title\s*:/i.test(text))
-          && this.messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
+          && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
           profileText = text;
           break;
         }
       }
 
+      if (foundNoResults) throw new Error('TGDB_NO_RESULTS');
+      if (!profileText) throw new Error('TARGET_NOT_FOUND');
+
+      // Check and fetch joined/member groups list exclusively
       try {
         await page.waitForFunction(
           () =>
@@ -214,9 +201,10 @@ export class BkpschAutomation {
         await groupsLink.click();
         await page.waitForTimeout(150);
       } catch {
-        // Continue flow if optional UI action is absent.
+        // Optional link click absent, skip safely.
       }
 
+      // Handle intermediate bot warnings if generated
       try {
         await page.waitForFunction(
           () =>
@@ -234,9 +222,10 @@ export class BkpschAutomation {
         await continueBtn.click();
         await page.waitForTimeout(150);
       } catch {
-        // Continue flow if optional UI action is absent.
+        // Optional button absent, skip cleanly
       }
 
+      // Extract block where IDs are rendered
       try {
         await page.waitForFunction(
           (baseline) => {
@@ -247,11 +236,11 @@ export class BkpschAutomation {
           { timeout: this.RESULT_WAIT_TIMEOUT_MS },
         );
       } catch {
-        // Continue with best effort extraction.
+        // Aborts wait but still relies on stream settle fallback
       }
 
-      await this.waitForMessageStreamSettle(page, baselineMessageCount);
-
+      // Let stream finish before scraping lists entirely
+      await waitForMessageStreamSettle(page, baselineMessageCount);
       const messageElements = await page.$$('.msg-text');
       let resultText = '';
 
@@ -263,6 +252,7 @@ export class BkpschAutomation {
         }
       }
 
+      // If missing generic markers, guess fallback
       if (!resultText) {
         for (let i = messageElements.length - 1; i >= baselineMessageCount; i--) {
           const text = await messageElements[i].innerText();
@@ -273,6 +263,7 @@ export class BkpschAutomation {
         }
       }
 
+      // Handle raw buffer writes locally over downloads triggering
       if (!csvData) {
         try {
           const csvLink = await page.$("a[href*='.csv'], a[download]");
@@ -290,14 +281,14 @@ export class BkpschAutomation {
               stream.on('error', reject);
             });
 
-            csvData = Buffer.concat(chunks).toString('utf-8');
+            csvData = Buffer.concat(chunks as any).toString('utf-8');
           }
         } catch {
           csvData = null;
         }
       }
 
-      // Extract title from profileText (supports any language)
+      // Secure Title parsing explicitly via Regex bindings
       const titleMatch = profileText ? profileText.match(/title:\s*([^\n]+)/i) : null;
       const extractedTitle = titleMatch ? titleMatch[1].trim() : undefined;
 
@@ -319,10 +310,16 @@ export class BkpschAutomation {
     }
   }
 
+  /**
+   * Automation Flow for requesting lists of strictly Nearby Users within close geographical proximity.
+   * Matches string query rigorously using the exact equality validator check, ignoring 'no results'.
+   * @param query The targeted string query explicitly verifying boundaries.
+   * @returns Raw results output string alongside related .csv buffered payload.
+   */
   static async executeNearbyFlow(
     query: string,
   ): Promise<{ result: string; csvData: string | null; timestamp: string; profileText: string | null; extractedTitle?: string }> {
-    const context = await this.createContext();
+    const context = await createContext();
     const page: Page = await context.newPage();
     let csvData: string | null = null;
     let profileText: string | null = null;
@@ -341,7 +338,7 @@ export class BkpschAutomation {
             stream.on('error', reject);
           });
 
-          csvData = Buffer.concat(chunks).toString('utf-8');
+          csvData = Buffer.concat(chunks as any).toString('utf-8');
         } catch {
           csvData = null;
         }
@@ -355,18 +352,35 @@ export class BkpschAutomation {
       });
 
       const baselineMessageCount = await page.locator('.msg-text').count();
-      const normalizedQuery = this.normalizeLookupValue(query);
+      const normalizedQuery = normalizeLookupValue(query);
       const queryIsNumeric = /^\d+$/.test(normalizedQuery);
 
-      await this.sendChatMessage(page, inputSelector, '/info');
-      await this.sendChatMessage(page, inputSelector, query);
+      await sendChatMessage(page, inputSelector, '/info');
+      await sendChatMessage(page, inputSelector, query);
 
+      // --- NEW: WAIT FOR BOT ACKNOWLEDGEMENT ---
+      try {
+        await page.waitForFunction(
+          (baseline) => document.querySelectorAll('.msg-text').length > Number(baseline),
+          baselineMessageCount,
+          { timeout: 8000 }
+        );
+      } catch (e) {
+        // Skip safely
+      }
+
+      // DOM loop checking exclusively if response securely matches the target identity logic natively
       try {
         await page.waitForFunction(
           (args: { baseline: number; normalized: string; isNumeric: boolean }) => {
             const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(args.baseline));
             return els.some((el) => {
               const txt = (el.textContent || '').toLowerCase();
+
+              if (txt.includes('there are no results for this search') || txt.includes('no results found')) {
+                return true;
+              }
+
               const hasProfile = /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
               if (!hasProfile) return false;
 
@@ -378,11 +392,13 @@ export class BkpschAutomation {
               const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
               if (handles.includes(args.normalized)) return true;
 
-              const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1] || '';
-              if (usernameLine.includes(args.normalized)) return true;
+              const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
+              if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) {
+                return true;
+              }
 
-              const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1] || '';
-              return titleLine.includes(args.normalized);
+              const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
+              return titleLine === args.normalized;
             });
           },
           {
@@ -393,20 +409,32 @@ export class BkpschAutomation {
           { timeout: this.RESULT_WAIT_TIMEOUT_MS },
         );
       } catch {
-        // Continue flow if profile card is not detected in time.
+        // Native timeout bypass executed on missing profiles
       }
 
-      const preActionMessages = await page.$$('.msg-text');
-      for (let i = preActionMessages.length - 1; i >= baselineMessageCount; i--) {
-        const text = await preActionMessages[i].innerText();
+      // Apply rigorous string validation checks across returned Nodes natively
+      const finalMessages = await page.$$('.msg-text');
+      let foundNoResults = false;
+      for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
+        const text = await finalMessages[i].innerText();
+        const lowText = text.toLowerCase();
+        if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
+          foundNoResults = true;
+          break;
+        }
+
         if (/id\s*:\s*\d+/i.test(text)
           && (/username\s*:/i.test(text) || /title\s*:/i.test(text))
-          && this.messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
+          && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
           profileText = text;
           break;
         }
       }
 
+      if (foundNoResults) throw new Error('TGDB_NO_RESULTS');
+      if (!profileText) throw new Error('TARGET_NOT_FOUND');
+
+      // Target Nearby Users specific flow button rendering clicks
       try {
         await page.waitForFunction(
           () =>
@@ -422,7 +450,7 @@ export class BkpschAutomation {
         await groupsLink.click();
         await page.waitForTimeout(150);
       } catch {
-        // Continue flow if optional UI action is absent.
+        // Fallback for link omissions
       }
 
       try {
@@ -442,9 +470,10 @@ export class BkpschAutomation {
         await continueBtn.click();
         await page.waitForTimeout(150);
       } catch {
-        // Continue flow if optional UI action is absent.
+        // Fallback omissions handles logic
       }
 
+      // Collect IDS result structure
       try {
         await page.waitForFunction(
           (baseline) => {
@@ -455,11 +484,10 @@ export class BkpschAutomation {
           { timeout: this.RESULT_WAIT_TIMEOUT_MS },
         );
       } catch {
-        // Continue with best effort extraction.
+        // Best effort
       }
 
-      await this.waitForMessageStreamSettle(page, baselineMessageCount);
-
+      await waitForMessageStreamSettle(page, baselineMessageCount);
       const messageElements = await page.$$('.msg-text');
       let resultText = '';
 
@@ -498,14 +526,13 @@ export class BkpschAutomation {
               stream.on('error', reject);
             });
 
-            csvData = Buffer.concat(chunks).toString('utf-8');
+            csvData = Buffer.concat(chunks as any).toString('utf-8');
           }
         } catch {
           csvData = null;
         }
       }
 
-      // Extract title from profileText (supports any language)
       const titleMatch = profileText ? profileText.match(/title:\s*([^\n]+)/i) : null;
       const extractedTitle = titleMatch ? titleMatch[1].trim() : undefined;
 
@@ -527,10 +554,10 @@ export class BkpschAutomation {
     }
   }
 
+  /**
+   * Helper that acts as a secure facade linking server instances seamlessly, cleanly terminating idle process rams implicitly.
+   */
   static async closeBrowser() {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-    }
+    await closeBrowser();
   }
 }

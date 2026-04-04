@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import { BkpschAutomation } from '../automation/bkpsch.automation';
 import { UserRepository } from '../repository/user.repository';
+import { Mutex } from '../utils/mutex';
 import { PaymentRequired } from '../errors/payment-required.error';
 import logger from '../utils/logger';
 
 const userRepository = new UserRepository();
+const bkpschMutex = new Mutex();
 const CONNECTED_USERS_CREDIT_COST = 20;
 
 type NearbyFlowResult = {
@@ -220,19 +222,32 @@ const parseConnectedUsersFromNearbyResult = (
 export const bkpschSearchController = async (req: Request, res: Response) => {
   try {
     const { query } = req.body as { query?: string };
-    logger.info(`bkpschSearchController called. userId=${req.user?._id}, query=${query ?? ''}`);
+    const userRequest = req as any;
+    logger.info(`bkpschSearchController called. userId=${userRequest.user?._id}, query=${query ?? ''}`);
 
     if (!query || !query.trim()) {
       logger.warn('bkpschSearchController validation failed: missing query');
       return res.status(400).json({ error: 'Search query is required' });
     }
 
-    const result = await BkpschAutomation.executeChatFlow(query.trim());
-    logger.info(`bkpschSearchController success. userId=${req.user?._id}`);
+    const result = await bkpschMutex.runExclusive(async () => {
+      return await BkpschAutomation.executeChatFlow(query.trim());
+    });
+
+    logger.info(`bkpschSearchController success. userId=${userRequest.user?._id}`);
     return res.status(200).json({ result });
   } catch (error) {
+    const userRequest = req as any;
+    if (error instanceof Error && error.message === 'TGDB_NO_RESULTS') {
+      logger.warn(`bkpschSearchController: No results found on TGDB. userId=${userRequest.user?._id}, query=${req.body.query}`);
+      return res.status(404).json({
+        error: 'TGDB_NO_RESULTS',
+        message: 'there are no results for this search'
+      });
+    }
+
     const message = error instanceof Error ? error.message : String(error);
-    logger.error(`bkpschSearchController error. userId=${req.user?._id}, error=${message}`);
+    logger.error(`bkpschSearchController error. userId=${userRequest.user?._id}, error=${message}`);
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -240,7 +255,8 @@ export const bkpschSearchController = async (req: Request, res: Response) => {
 export const bkpschNearbyController = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { query } = req.body as { query?: string };
-    const userId = req.user?._id;
+    const userRequest = req as any;
+    const userId = userRequest.user?._id;
     logger.info(`bkpschNearbyController called. userId=${userId}, query=${query ?? ''}`);
 
     if (!userId) {
@@ -257,7 +273,7 @@ export const bkpschNearbyController = async (req: Request, res: Response, next: 
     const monthlyStatus = await userRepository.getMonthlyClickCountStatus(userId.toString());
     if (monthlyStatus.triesLeft <= 0) {
       logger.warn(`bkpschNearbyController button click monthly limit exceeded. userId=${userId}`);
-      return res.status(429).json({ 
+      return res.status(429).json({
         error: 'Monthly click limit reached',
         triesLeft: 0,
         message: 'You have reached your monthly limit of 15 clicks for this button'
@@ -273,7 +289,9 @@ export const bkpschNearbyController = async (req: Request, res: Response, next: 
     }
 
     // Execute automation and parse into a structured fallback-like payload for UI rendering.
-    const nearbyResult = await BkpschAutomation.executeNearbyFlow(query.trim());
+    const nearbyResult = await bkpschMutex.runExclusive(async () => {
+      return await BkpschAutomation.executeNearbyFlow(query.trim());
+    });
     const parsedConnectedUsers = parseConnectedUsersFromNearbyResult(nearbyResult);
 
     const result = {
@@ -290,7 +308,7 @@ export const bkpschNearbyController = async (req: Request, res: Response, next: 
     // Increment monthly button click count and deduct credits after successful execution
     await userRepository.incrementMonthlyClickCount(userId.toString());
     await userRepository.updateUserCredits(userId.toString(), -CONNECTED_USERS_CREDIT_COST);
-    
+
     const updatedMonthlyStatus = await userRepository.getMonthlyClickCountStatus(userId.toString());
     const updatedUser = await userRepository.getUserById(userId.toString());
     logger.info(`bkpschNearbyController success. userId=${userId}, creditsRemaining=${updatedUser?.credits}, triesLeft=${updatedMonthlyStatus.triesLeft}`);
@@ -301,12 +319,21 @@ export const bkpschNearbyController = async (req: Request, res: Response, next: 
       triesLeft: updatedMonthlyStatus.triesLeft
     });
   } catch (error) {
+    const userRequest = req as any;
+    if (error instanceof Error && error.message === 'TGDB_NO_RESULTS') {
+      logger.warn(`bkpschNearbyController: No results found on TGDB. userId=${userRequest.user?._id}, query=${req.body.query}`);
+      return res.status(404).json({
+        error: 'TGDB_NO_RESULTS',
+        message: 'there are no results for this search'
+      });
+    }
+
     if (error instanceof Error && error.message === 'SESSION_EXPIRED') {
-      logger.error(`bkpschNearbyController session expired. userId=${req.user?._id}`);
+      logger.error(`bkpschNearbyController session expired. userId=${userRequest.user?._id}`);
       return res.status(500).json({ error: 'Internal automation session expired' });
     }
     const message = error instanceof Error ? error.message : String(error);
-    logger.error(`bkpschNearbyController error. userId=${req.user?._id}, error=${message}`);
+    logger.error(`bkpschNearbyController error. userId=${userRequest.user?._id}, error=${message}`);
     return next(error);
   }
 };
