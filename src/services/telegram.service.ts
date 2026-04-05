@@ -393,7 +393,7 @@ class TelegramService {
                     'Api-Key': API_KEY,
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                timeout: this.PROXY_REQUEST_TOTAL_TIMEOUT_MS,
+                timeout: 30000, // 30 second timeout — prevents silent hang causing 504 CORS error,
             });
 
             if (response.status !== 200) {
@@ -521,7 +521,7 @@ class TelegramService {
                     username?: string;
                     usernames?: string[];
                 };
-                username_history?: Array<{ username?: string; text?: string; link?: string }>;
+                username_history?: Array<{ username?: string; text?: string; link?: string; date?: string }>;
                 groups?: Array<{ username?: string; link?: string; title?: string }>;
             };
         };
