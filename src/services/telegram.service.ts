@@ -943,55 +943,34 @@ class TelegramService {
     }
 
     public async analyzeChannel(channelUsername: string, language?: string): Promise<TransformedBookmarkData> {
-        const requestBody: { channel_username: string; language?: string } = {
-            channel_username: channelUsername
-        };
-        
-        if (language) {
-            requestBody.language = language;
-        }
-
         try {
-            const response = await axios.post(
-                'https://analyze.darkmap.org/analyze-channel',
-                requestBody,
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                }
-            );
+            const { ChannelService } = await import('./channel.service');
+            const channelService = new ChannelService();
+            const responseData = await channelService.analyzeChannel(channelUsername, language || 'english');
 
-            // Transform the API response to match bookmark schema format
-            return transformChannelAnalysisToBookmarkFormat(response.data);
+            // Format to match ApiResponse interface so transformChannelAnalysisToBookmarkFormat can do its work
+            const apiResponse: ApiResponse = {
+                account_used: 0,
+                analysis: responseData.analysis,
+                channel: channelUsername,
+                channel_info: responseData.channelInfo,
+                message_analysis: responseData.message_analysis,
+                processed_at: new Date().toISOString(),
+                response_language: responseData.responseLanguage,
+                statistics: responseData.statistics,
+                success: true,
+                timestamps: responseData.timestamps,
+                top_50_users: responseData.top50Users
+            };
 
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                if (error.response) {
-                    const status = error.response.status;
-                    const errorMessage = error.response.data?.error || error.response.data?.message || error.response.statusText || 'Unknown error from external API';
-                    
-                    switch (status) {
-                        case 400:
-                            throw new BadRequestError(errorMessage);
-                        case 404:
-                            throw new NotFoundError(errorMessage);
-                        case 401:
-                            throw new UnauthorizedError(errorMessage);
-                        case 403:
-                            throw new ForbiddenError(errorMessage);
-                        case 422:
-                            throw new RequestValidationError(errorMessage);
-                        case 429:
-                            throw new TooManyRequestsError();
-                        default:
-                            throw new BadRequestError(errorMessage);
-                    }
-                } else if (error.request) {
-                    throw new InternalServerError('Unable to connect to external API service');
-                }
+            return transformChannelAnalysisToBookmarkFormat(apiResponse);
+
+        } catch (error: any) {
+            logger.error(`Error in TelegramService analyzeChannel: ${error.message}`);
+            if (error instanceof BadRequestError || error instanceof NotFoundError || error instanceof InternalServerError) {
+                throw error;
             }
-            throw new InternalServerError('Unexpected error occurred while analyzing channel');
+            throw new InternalServerError(`Unexpected error occurred while analyzing channel: ${error.message}`);
         }
     }
 }
