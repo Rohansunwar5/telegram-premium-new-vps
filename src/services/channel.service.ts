@@ -1,8 +1,10 @@
-import axios from 'axios';
 import { InternalServerError } from '../errors/internal-server.error';
 import { BadRequestError } from '../errors/bad-request.error';
-import config from '../config';
 import logger from '../utils/logger';
+import { TelegramExtractorService } from './telegram-extractor.service';
+import { GptSummarizerService } from './gpt-summarizer.service';
+import { TelegramAccountRepository } from '../repository/telegramAccount.repository';
+import { generateMessageStatistics } from '../utils/telegram-helper.util';
 
 interface IScrapeParams {
     channelName: string;
@@ -12,80 +14,62 @@ interface IScrapeParams {
 }
 
 export class ChannelService {
-    private openApiUrl: string;
+    private extractorService: TelegramExtractorService;
+    private summarizerService: GptSummarizerService;
+    private accountRepository: TelegramAccountRepository;
+
+    private supportedLanguages: Record<string, { english: string; native: string }> = {
+        "english": { "english": "English", "native": "English" },
+        "hindi": { "english": "Hindi", "native": "हिन्दी" },
+        "bengali": { "english": "Bengali", "native": "বাংলা" },
+        "telugu": { "english": "Telugu", "native": "తెలుగు" },
+        "marathi": { "english": "Marathi", "native": "मराठी" },
+        "tamil": { "english": "Tamil", "native": "தமிழ்" },
+        "gujarati": { "english": "Gujarati", "native": "ગુજરાતી" },
+        "urdu": { "english": "Urdu", "native": "اردو" }
+    };
 
     constructor() {
-        this.openApiUrl = config.OPEN_API_URL;
+        this.accountRepository = new TelegramAccountRepository();
+        this.extractorService = new TelegramExtractorService(this.accountRepository, 100);
+        this.summarizerService = new GptSummarizerService();
     }
 
     async scrapeChannel(params: IScrapeParams | string): Promise<any> {
         try {
             let scrapeParams: IScrapeParams;
-            
             if (typeof params === 'string') {
-                scrapeParams = {
-                    channelName: params,
-                    limit: 100
-                };
+                scrapeParams = { channelName: params, limit: 100 };
             } else {
                 scrapeParams = params;
             }
 
+            const triggerWords = scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0 
+                ? scrapeParams.triggerWords 
+                : ['important', 'urgent', 'announcement', 'update'];
+
             logger.info(`📡 Scraping ${scrapeParams.channelName}`, {
                 limit: scrapeParams.limit,
                 since: scrapeParams.since ? new Date(scrapeParams.since).toISOString() : 'all',
-                triggerWords: scrapeParams.triggerWords || 'none'
+                triggerWords: triggerWords
             });
 
-            // Build request body for your Flask API
-            const requestBody: any = {
-                channelName: scrapeParams.channelName
-            };
-
-            // Add optional parameters
-            if (scrapeParams.limit !== undefined && scrapeParams.limit !== null) {
-                requestBody.limit = scrapeParams.limit;
-            }
-
+            let scrapeResult;
             if (scrapeParams.since) {
-                // Convert date to ISO string or timestamp as needed by your API
-                requestBody.since = scrapeParams.since instanceof Date 
-                    ? scrapeParams.since.toISOString() 
-                    : scrapeParams.since;
+                const sinceDate = scrapeParams.since instanceof Date ? scrapeParams.since : new Date(scrapeParams.since);
+                scrapeResult = await this.extractorService.getMessagesSince(scrapeParams.channelName, sinceDate, scrapeParams.limit || 100);
+            } else {
+                scrapeResult = await this.extractorService.getMessages(scrapeParams.channelName, scrapeParams.limit || 100);
             }
 
-            // Add triggerWords if provided
-            if (scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0) {
-                requestBody.triggerWords = scrapeParams.triggerWords;
-                logger.info(`🎯 Sending trigger words to API: ${scrapeParams.triggerWords.join(', ')}`);
-            }
-
-            // Call your Flask API
-            const response = await axios.post(
-                `${this.openApiUrl}/scrape`,
-                requestBody,
-                {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 1200000 // 30 second timeout for scraping
-                }
-            );
-
-            if (!response.data.success) {
-                throw new BadRequestError(response.data.error || 'Scraping failed');
-            }
-
-            const messages = response.data.messages || [];
+            const messages = scrapeResult.messages || [];
             
-            // Sort messages by timestamp to ensure correct order
             const sortedMessages = messages.sort((a: any, b: any) => {
                 const timeA = new Date(a.timestamp_raw || a.timestamp).getTime();
                 const timeB = new Date(b.timestamp_raw || b.timestamp).getTime();
                 return timeA - timeB;
             });
 
-            // Calculate statistics
             let firstMessageTimestamp = new Date();
             let lastMessageTimestamp = new Date();
             let timeDifference = 0;
@@ -96,291 +80,155 @@ export class ChannelService {
                 timeDifference = Math.abs(lastMessageTimestamp.getTime() - firstMessageTimestamp.getTime());
             }
 
-            logger.info(`✅ Scraped ${sortedMessages.length} messages from ${scrapeParams.channelName}`, {
-                firstMessage: firstMessageTimestamp.toISOString(),
-                lastMessage: lastMessageTimestamp.toISOString(),
-                timeSpan: this.formatDuration(timeDifference),
-                withTriggerWords: !!(scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0)
-            });
+            logger.info(`✅ Scraped ${sortedMessages.length} messages from ${scrapeParams.channelName}`);
 
-            // FIXED: Include analysis and statistics from API response
-            const result = {
+            let messageAnalysis = null;
+            if (sortedMessages.length > 0) {
+                try {
+                    messageAnalysis = generateMessageStatistics(sortedMessages, triggerWords);
+                } catch (e: any) {
+                    logger.error(`Error generating message analysis: ${e.message}`);
+                }
+            }
+
+            return {
                 messages: sortedMessages,
-                channelInfo: response.data.channelInfo,
+                channelInfo: scrapeResult.channel_info,
                 firstMessageTimestamp,
                 lastMessageTimestamp,
                 timeDifference,
                 messageCount: sortedMessages.length,
                 isIncremental: !!scrapeParams.since,
-                // NEW: Include the analysis and statistics data from API
-                analysis: response.data.analysis,
-                statistics: response.data.statistics,
-                // Include trigger words info in result
-                usedTriggerWords: scrapeParams.triggerWords || []
+                analysis: messageAnalysis,
+                statistics: {
+                    message_count: sortedMessages.length,
+                    first_message_timestamp: firstMessageTimestamp,
+                    last_message_timestamp: lastMessageTimestamp,
+                    time_difference_ms: timeDifference,
+                    unique_users_count: scrapeResult.unique_users_count
+                },
+                usedTriggerWords: triggerWords
             };
-
-            // Log what analysis/statistics data we received
-            if (response.data.analysis) {
-                logger.info(`📊 Received analysis data:`, {
-                    frequency_hourly_length: response.data.analysis.frequency_hourly?.length || 0,
-                    frequency_user_count: Object.keys(response.data.analysis.frequency_user || {}).length,
-                    frequency_weekday_count: Object.keys(response.data.analysis.frequency_weekday || {}).length,
-                    links_count: response.data.analysis.links?.length || 0,
-                    has_trigger_frequency: !!response.data.analysis.trigger_frequency
-                });
-            }
-
-            if (response.data.statistics) {
-                logger.info(`📈 Received statistics data:`, {
-                    unique_users_count: response.data.statistics.unique_users_count,
-                    message_count: response.data.statistics.message_count,
-                    time_difference_ms: response.data.statistics.time_difference_ms
-                });
-            }
-
-            return result;
             
         } catch (error: any) {
-            logger.error('Error scraping channel:', error);
-            
-            if (error.response) {
-                const errorMsg = error.response.data?.error || error.response.statusText || 'Unknown error';
-                throw new BadRequestError(`Scraping failed: ${errorMsg}`);
-            }
-            
-            if (error.code === 'ECONNABORTED') {
-                throw new InternalServerError('Scraping timeout - channel may have too many messages');
-            }
-            
-            throw new InternalServerError('Failed to scrape channel');
+            logger.error(`Error scraping channel: ${error.message}`);
+            throw new InternalServerError(`Failed to scrape channel: ${error.message}`);
         }
     }
 
-        private formatDuration(ms: number): string {
-            const seconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const hours = Math.floor(minutes / 60);
-            const days = Math.floor(hours / 24);
-
-            if (days > 0) return `${days}d ${hours % 24}h`;
-            if (hours > 0) return `${hours}h ${minutes % 60}m`;
-            if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-            return `${seconds}s`;
-        }
-
-        async summarizeMessages(messages: any[], channelName: string): Promise<string> {
+    async summarizeMessages(messages: any[], channelName: string): Promise<string> {
         try {
             if (messages.length === 0) {
                 return 'No messages to summarize.';
             }
 
             logger.info(`📝 Summarizing ${messages.length} messages for ${channelName}`);
-
-            // Call Flask API for summarization
-            const response = await axios.post(
-                `${this.openApiUrl}/summarize-messages`,
-                {
-                    messages,
-                    channelName,
-                    language: 'english',
-                    triggerWords: ['important', 'urgent', 'announcement', 'update'], // Add trigger words
-                    // Add message count for better context
-                    context: {
-                        totalMessages: messages.length,
-                        timeRange: this.getTimeRange(messages)
-                    }
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    timeout: 1200000 
-                }
-            );
-
-            if (!response.data.success) {
-                throw new InternalServerError('Summarization failed');
-            }
-
-
-            return response.data.analysis || 'No summary available';
+            
+            const summary = await this.summarizerService.summarizeCombinedMessages(messages, channelName, 'english');
+            return summary || 'No summary available';
             
         } catch (error: any) {
-            logger.error('Error summarizing messages:', error);
-            
-            if (error.response) {
-                logger.error('API Response:', error.response.data);
-                throw new InternalServerError(`Summarization failed: ${error.response.data?.error || 'Unknown error'}`);
-            }
-            
-            throw new InternalServerError('Failed to summarize messages');
+            logger.error(`Error summarizing messages: ${error.message}`);
+            throw new InternalServerError(`Summarization failed: ${error.message}`);
         }
     }
 
-    private getTimeRange(messages: any[]): string {
-        if (messages.length === 0) return 'No messages';
-        
-        const timestamps = messages.map(m => new Date(m.timestamp_raw || m.timestamp).getTime());
-        const earliest = new Date(Math.min(...timestamps));
-        const latest = new Date(Math.max(...timestamps));
-        
-        return `${earliest.toISOString()} to ${latest.toISOString()}`;
-    }
-
-    async analyzeChannel(channelUsername: string, language: string = 'english'): Promise <any> {
+    async analyzeChannel(channelUsername: string, language: string = 'english'): Promise<any> {
         try {
-        // Call Flask API for full channel analysis (existing feature)
-        const response = await axios.post(
-            `${this.openApiUrl}/analyze-channel`,
-            {
-            channel_username: channelUsername,
-            language
-            },
-            {
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            const triggerWords = ['important', 'urgent', 'announcement', 'update'];
+            const scrapeResult = await this.extractorService.getMessages(channelUsername);
+            
+            if (!scrapeResult.messages || scrapeResult.messages.length === 0) {
+                throw new BadRequestError('No messages found for analysis');
             }
-        );
 
-        if (!response.data.success) {
-            throw new BadRequestError(response.data.error || 'Analysis failed');
-        }
+            const analysisResult = await this.summarizerService.analyzeTelegramGroup(scrapeResult, language);
+            const messageAnalysis = generateMessageStatistics(scrapeResult.messages, triggerWords);
 
-        return {
-            analysis: response.data.analysis,
-            statistics: response.data.statistics,
-            top50Users: response.data.top_50_users,
-            channelInfo: response.data.channel_info,
-            responseLanguage: response.data.response_language,
-            timestamps: response.data.timestamps
-        };
+            return {
+                analysis: analysisResult.analysis,
+                statistics: analysisResult.statistics,
+                top50Users: analysisResult.top_50_users_list,
+                channelInfo: scrapeResult.channel_info,
+                responseLanguage: analysisResult.response_language,
+                timestamps: {
+                    first_message: scrapeResult.first_message_timestamp,
+                    last_message: scrapeResult.last_message_timestamp
+                },
+                message_analysis: messageAnalysis
+            };
+
         } catch (error: any) {
-        console.error('Error analyzing channel:', error);
-        if (error.response) {
-            if (error.response.status === 404) {
-            throw new BadRequestError('Channel not found');
-            }
-            throw new BadRequestError(`Analysis failed: ${error.response.data.error || 'Unknown error'}`);
-        }
-        throw new InternalServerError('Failed to analyze channel');
+            logger.error(`Error analyzing channel: ${error.message}`);
+            throw new InternalServerError(`Failed to analyze channel: ${error.message}`);
         }
     }
 
     async getChannelInfo(channelName: string): Promise<any> {
         try {
-            const response = await axios.get(
-                `${this.openApiUrl}/channel-info/${channelName}`,
-                {
-                timeout: 10000
-                }
-            );
-
-            if (!response.data.success) {
-                throw new BadRequestError('Channel not found');
-            }
-
-            return response.data.channel_info;
+            const result = await this.extractorService.getMessages(channelName, 1);
+            return result.channel_info;
         } catch (error: any) {
-            console.error('Error getting channel info:', error);
-            if (error.response && error.response.status === 404) {
-                throw new BadRequestError('Channel not found');
-            }
-            throw new InternalServerError('Failed to get channel information');
+            logger.error(`Error getting channel info: ${error.message}`);
+            throw new BadRequestError('Channel not found or unavailable');
         }
     }
 
     async searchChannels(query: string): Promise<any[]> {
-        try {
-            // This endpoint would need to be added to Flask API if channel search is needed
-            // For now, returning empty array as placeholder
-            console.log('Channel search not yet implemented in Flask API');
-            return [];
-        } catch (error: any) {
-            console.error('Error searching channels:', error);
-            throw new InternalServerError('Failed to search channels');
-        }
+        logger.info('Channel search not yet implemented natively - returning empty');
+        return [];
     }
 
     async getAccountsStatus(): Promise<any> {
         try {
-            const response = await axios.get(
-                `${this.openApiUrl}/accounts/status`,
-                {
-                timeout: 5000
-                }
-            );
-
-            if (!response.data.success) {
-                throw new InternalServerError('Failed to get accounts status');
-            }
-
-            return response.data;
+            const statuses = await this.accountRepository.getAccountsStatus();
+            return {
+                success: true,
+                total_accounts: statuses.length,
+                accounts: statuses
+            };
         } catch (error: any) {
-            console.error('Error getting accounts status:', error);
-            throw new InternalServerError('Failed to get accounts status');
+            logger.error(`Error getting accounts status: ${error.message}`);
+            throw new InternalServerError(`Failed to get accounts status: ${error.message}`);
         }
     }
 
     async resetAccountLimits(): Promise<any> {
         try {
-            const response = await axios.post(
-                `${this.openApiUrl}/accounts/reset-limits`,
-                {},
-                {
-                timeout: 5000
-                }
-            );
-
-            if (!response.data.success) {
-                throw new InternalServerError('Failed to reset account limits');
-            }
-
-            return response.data;
+            await this.accountRepository.resetRateLimits();
+            return {
+                success: true,
+                message: "Rate limits reset for all accounts"
+            };
         } catch (error: any) {
-            console.error('Error resetting account limits:', error);
-            throw new InternalServerError('Failed to reset account limits');
+            logger.error(`Error resetting account limits: ${error.message}`);
+            throw new InternalServerError(`Failed to reset account limits: ${error.message}`);
         }
     }
 
     async getSupportedLanguages(): Promise<any[]> {
-        try {
-            const response = await axios.get(
-                `${this.openApiUrl}/supported-languages`,
-                {
-                timeout: 5000
-                }
-            );
-
-            if (!response.data.success) {
-                throw new InternalServerError('Failed to get supported languages');
-            }
-
-            return response.data.supported_languages;
-        } catch (error: any) {
-            console.error('Error getting supported languages:', error);
-            throw new InternalServerError('Failed to get supported languages');
-        }
-    }
-
-  // Helper method to format messages for consistency
-    formatMessagesForStorage(messages: any[]): any[] {
-        return messages.map(msg => ({
-        timestamp: msg.timestamp,
-        timestamp_raw: msg.timestamp_raw,
-        text: msg.text,
-        content: msg.content || msg.text,
-        author: msg.author || msg.sender,
-        sender: msg.sender,
-        sender_id: msg.sender_id,
-        username: msg.username,
-        message_id: msg.message_id
+        return Object.keys(this.supportedLanguages).map(code => ({
+            code,
+            english_name: this.supportedLanguages[code].english,
+            native_name: this.supportedLanguages[code].native
         }));
     }
 
-  // Helper method to validate channel name format
+    formatMessagesForStorage(messages: any[]): any[] {
+        return messages.map(msg => ({
+            timestamp: msg.timestamp,
+            timestamp_raw: msg.timestamp_raw,
+            text: msg.text,
+            content: msg.content || msg.text,
+            author: msg.author || msg.sender,
+            sender: msg.sender,
+            sender_id: msg.sender_id,
+            username: msg.username,
+            message_id: msg.message_id
+        }));
+    }
+
     validateChannelName(channelName: string): boolean {
-        // Basic validation - can be enhanced based on Telegram rules
         const validPattern = /^[a-zA-Z0-9_]{5,32}$/;
         return validPattern.test(channelName);
     }

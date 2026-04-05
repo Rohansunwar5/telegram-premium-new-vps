@@ -29,6 +29,7 @@ const config = {
   BKPSCH_TIMEOUT_SELECTOR: Number(process.env.BKPSCH_TIMEOUT_SELECTOR || '10000') as number,
   BKPSCH_AUTH_FILE_PATH: (process.env.BKPSCH_AUTH_FILE_PATH || 'auth/bkpsch.auth.json') as string,
   BKPSCH_CHROME_DATA_DIR: (process.env.BKPSCH_CHROME_DATA_DIR || 'auth/bkpsch.chrome_data') as string,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY as string,
   DEFAULT_COUNTRY_CODE: 'IN',
 };
 
