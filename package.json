@@ -8,7 +8,7 @@
     "dev": "ts-node-dev --files --respawn src/index.ts",
     "prepare": "husky install",
     "clean": "rimraf dist/",
-    "build": "npm run clean && tsc",
+    "build": "npm run clean && tsc && cp -r src/templates dist/templates",
     "lint:fix": "eslint --fix --ext .ts ."
   },
   "keywords": [],
