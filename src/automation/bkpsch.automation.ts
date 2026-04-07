@@ -198,8 +198,8 @@ export class BkpschAutomation {
           .locator('a')
           .filter({ hasText: /What groups is the user a member of/i })
           .last();
-        await groupsLink.click();
-        await page.waitForTimeout(150);
+        await groupsLink.click({ force: true });
+        await page.waitForTimeout(500);
       } catch {
         // Optional link click absent, skip safely.
       }

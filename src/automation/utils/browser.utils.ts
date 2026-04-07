@@ -94,6 +94,14 @@ export async function waitForMessageStreamSettle(
   let stableForMs = 0;
 
   while (Date.now() - startedAt < timeoutMs) {
+    // Force scroll to the bottom of the chat to trigger lazy rendering
+    await page.evaluate(() => {
+      const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
+      if (scrollable) {
+        scrollable.scrollTop = scrollable.scrollHeight;
+      }
+    });
+
     const snapshot = await page.evaluate((baseline) => {
       const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(baseline));
       const count = els.length;

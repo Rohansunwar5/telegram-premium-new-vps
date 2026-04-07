@@ -212,21 +212,34 @@ class TelegramService {
         userInfoText: string,
     ) {
         const normalizedExtractedTitle = String(extractedTitle || '').trim();
-        const normalizedUsernames = Array.from(
-            new Set(
-                [
-                    ...this.extractUsernameCandidates(user.username),
-                    ...this.extractUsernameCandidates(userInfoText),
-                    ...(Array.isArray(user.usernames) ? user.usernames.flatMap((item) => this.extractUsernameCandidates(item)) : []),
-                ]
-                    .map((item) => this.normalizeLookupValue(item))
-                    .filter(Boolean),
-            ),
-        );
+        
+        let isValid = false;
+        let validationDetails = '';
 
-        if (!normalizedUsernames.includes(validation.normalizedQuery)) {
+        if (/^\d+$/.test(validation.normalizedQuery)) {
+            const idMatch = userInfoText.match(/id\s*:\s*(\d+)/i);
+            const extractedId = idMatch ? idMatch[1] : null;
+            isValid = extractedId === validation.normalizedQuery;
+            validationDetails = `extractedId=${extractedId}`;
+        } else {
+            const normalizedUsernames = Array.from(
+                new Set(
+                    [
+                        ...this.extractUsernameCandidates(user.username),
+                        ...this.extractUsernameCandidates(userInfoText),
+                        ...(Array.isArray(user.usernames) ? user.usernames.flatMap((item) => this.extractUsernameCandidates(item)) : []),
+                    ]
+                        .map((item) => this.normalizeLookupValue(item))
+                        .filter(Boolean),
+                ),
+            );
+            isValid = normalizedUsernames.includes(validation.normalizedQuery);
+            validationDetails = `returnedUsernames=${normalizedUsernames.join(',')}`;
+        }
+
+        if (!isValid) {
             logger.warn(
-                `Fallback validation failed: requestId=${validation.requestId} query=${validation.query} queryUsername=${validation.normalizedQuery} returnedUsernames=${normalizedUsernames.join(',')}`,
+                `Fallback validation failed: requestId=${validation.requestId} query=${validation.query} normalizedQuery=${validation.normalizedQuery} ${validationDetails}`,
             );
             throw new Error('Requested account does not provide accessible Telegram data');
         }
