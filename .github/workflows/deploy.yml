@@ -24,6 +24,7 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             npm install
+            npx playwright install chromium
             npm run build
             pm2 restart telegram-premium-server
             pm2 save
