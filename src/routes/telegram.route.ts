@@ -16,5 +16,6 @@ telegramRouter.post('/proxy', isLoggedIn, upload.none(), asyncHandler(proxyReque
 telegramRouter.post('/proxy/fetch-messages', isLoggedIn, upload.none(), asyncHandler(tgDev));
 telegramRouter.post('/check-phone', isLoggedIn, asyncHandler(checkPhoneNumber));
 telegramRouter.post('/analyze-channel', isLoggedIn, asyncHandler(analyzeChannel));
+telegramRouter.post('/analyze-channel-darkmap', asyncHandler(analyzeChannel));
 
 export default telegramRouter;
