@@ -2,9 +2,11 @@ import { Download, Page } from 'playwright';
 import config from '../config';
 import { createContext, sendChatMessage, waitForMessageStreamSettle, closeBrowser } from './utils/browser.utils';
 import { normalizeLookupValue, messageMatchesQuery } from './utils/validation.utils';
+import { Mutex } from '../utils/mutex';
 
 export class BkpschAutomation {
-  private static readonly RESULT_WAIT_TIMEOUT_MS = 25000;
+  private static readonly RESULT_WAIT_TIMEOUT_MS = 60000;
+  private static readonly mutex = new Mutex();
 
   /**
    * Main entry flow for executing generalized chat automation, searching for a user/channel/info target.
@@ -53,155 +55,90 @@ export class BkpschAutomation {
       const normalizedQuery = normalizeLookupValue(query);
       const queryIsNumeric = /^\d+$/.test(normalizedQuery);
 
-      await sendChatMessage(page, inputSelector, '/info');
-      await sendChatMessage(page, inputSelector, query);
+      // Send /info <query> as a single message to skip the bot's intermediate prompt
+      await sendChatMessage(page, inputSelector, `/info ${query}`);
 
-      // --- NEW: WAIT FOR BOT ACKNOWLEDGEMENT ---
-      // Ensures we don't scan old messages before the bot even appends new ones.
-      try {
-        await page.waitForFunction(
-          (baseline) => document.querySelectorAll('.msg-text').length > Number(baseline),
-          baselineMessageCount,
-          { timeout: 8000 }
-        );
-      } catch (e) {
-        // If count didn't increase, the bot might be stuck or query didn't send.
-        // We'll proceed to validation anyway which will likely fail/timeout safely.
-      }
-
-      // --- DOM LEVEL VALIDATION ---
-      // We pass explicit rules to Playwright evaluate wrapper to securely identify our specified query.
-      // E.g. Query 'rohan' shouldn't mistakenly scrape 'rohan_22'.
-      const validationResult = await page.evaluate(
-        (args: { baseline: number; normalized: string; isNumeric: boolean }) => {
-          const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(args.baseline));
-
-          for (const el of els) {
-            const txt = (el.textContent || '').toLowerCase();
-
-            // 1. Immediately abort if the bot specifically says 'no results for this search'
-            if (txt.includes('there are no results for this search') || txt.includes('no results found')) {
-              return { success: false, noResults: true };
-            }
-
-            const hasProfile = /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
-            if (!hasProfile) continue;
-
-            // Proceed automatically if search query wasn't strictly provided
-            if (!args.normalized) return { success: true };
-
-            if (args.isNumeric) {
-              if (new RegExp(`id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt)) return { success: true };
-              continue;
-            }
-
-            const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
-            if (handles.includes(args.normalized)) return { success: true };
-
-            const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
-            if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) {
-              return { success: true };
-            }
-
-            const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
-            if (titleLine === args.normalized) return { success: true };
-          }
-          return null; // Not found yet
-        },
-        {
-          baseline: baselineMessageCount,
-          normalized: normalizedQuery,
-          isNumeric: queryIsNumeric,
-        }
-      );
-
-      if (validationResult?.noResults) {
-        throw new Error('TGDB_NO_RESULTS');
-      }
-
+      // Wait for the bot to return a matching profile OR explicit no-results.
+      // Check ALL new messages (not just last) — profile card and action buttons are separate elements.
       try {
         await page.waitForFunction(
           (args: { baseline: number; normalized: string; isNumeric: boolean }) => {
             const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(args.baseline));
+            if (!els.length) return false;
 
+            // Check for explicit no-results in any new message
+            if (els.some((el) => {
+              const t = (el.textContent || '').toLowerCase();
+              return t.includes('there are no results for this search') || t.includes('no results found');
+            })) return true;
+
+            // Find the profile card message
             return els.some((el) => {
               const txt = (el.textContent || '').toLowerCase();
-
-              if (txt.includes('there are no results for this search') || txt.includes('no results found')) {
-                return true; // We return true to stop the wait, but we'll check value below
-              }
-
-              const hasProfile = /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
-              if (!hasProfile) return false;
-
+              if (!/id\s*:\s*\d+/i.test(txt)) return false;
               if (!args.normalized) return true;
-
               if (args.isNumeric) {
-                return new RegExp(`id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt);
+                return new RegExp(`(?:^|\\s)id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt);
               }
-
-              const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
+              const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((m) => m[1]);
               if (handles.includes(args.normalized)) return true;
-
               const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
-              if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) {
-                return true;
-              }
-
+              if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) return true;
               const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
               return titleLine === args.normalized;
             });
           },
-          {
-            baseline: baselineMessageCount,
-            normalized: normalizedQuery,
-            isNumeric: queryIsNumeric,
-          },
+          { baseline: baselineMessageCount, normalized: normalizedQuery, isNumeric: queryIsNumeric },
           { timeout: this.RESULT_WAIT_TIMEOUT_MS },
         );
       } catch {
-        // Validation timeout
+        // Timeout — proceed to re-verify loop
       }
 
-      // Re-verify after wait
+      // Scroll to bottom to ensure latest messages are rendered
+      await page.evaluate(() => {
+        const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
+        if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+      });
+      await page.waitForTimeout(300);
+
+      // Re-verify: scan newest-first, stop at first profile or no-results
       const finalMessages = await page.$$('.msg-text');
-      let foundNoResults = false;
       for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
         const text = await finalMessages[i].innerText();
         const lowText = text.toLowerCase();
         if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
-          foundNoResults = true;
-          break;
+          throw new Error('TGDB_NO_RESULTS');
         }
-
-        if (/id\s*:\s*\d+/i.test(text)
-          && (/username\s*:/i.test(text) || /title\s*:/i.test(text))
-          && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
+        if (/id\s*:\s*\d+/i.test(text) && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
           profileText = text;
           break;
         }
       }
 
-      if (foundNoResults) throw new Error('TGDB_NO_RESULTS');
       if (!profileText) throw new Error('TARGET_NOT_FOUND');
 
-      // Check and fetch joined/member groups list exclusively
+      // Wait for the groups link to appear — it renders in the same message block as the profile
+      // Use a fresh message count so we only look at messages from the profile card onward
+      const afterProfileCount = await page.locator('.msg-text').count();
       try {
         await page.waitForFunction(
-          () =>
-            Array.from(document.querySelectorAll('a')).some((el) =>
-              el.textContent?.includes('What groups is the user a member of'),
+          (baseline) =>
+            Array.from(document.querySelectorAll('.msg-text')).slice(Number(baseline)).some((el) =>
+              (el.textContent || '').includes('What groups is the user a member of'),
             ),
-          { timeout: 10000 },
+          Math.max(afterProfileCount - 3, baselineMessageCount),
+          { timeout: 12000 },
         );
         const groupsLink = page
-          .locator('a')
+          .locator('a, button, [role="button"]')
           .filter({ hasText: /What groups is the user a member of/i })
           .last();
+        await groupsLink.scrollIntoViewIfNeeded();
         await groupsLink.click({ force: true });
         await page.waitForTimeout(500);
       } catch {
-        // Optional link click absent, skip safely.
+        // Link not present, skip
       }
 
       // Handle intermediate bot warnings if generated
@@ -355,83 +292,62 @@ export class BkpschAutomation {
       const normalizedQuery = normalizeLookupValue(query);
       const queryIsNumeric = /^\d+$/.test(normalizedQuery);
 
-      await sendChatMessage(page, inputSelector, '/info');
-      await sendChatMessage(page, inputSelector, query);
+      // Send /info <query> as a single message to skip the bot's intermediate prompt
+      await sendChatMessage(page, inputSelector, `/info ${query}`);
 
-      // --- NEW: WAIT FOR BOT ACKNOWLEDGEMENT ---
-      try {
-        await page.waitForFunction(
-          (baseline) => document.querySelectorAll('.msg-text').length > Number(baseline),
-          baselineMessageCount,
-          { timeout: 8000 }
-        );
-      } catch (e) {
-        // Skip safely
-      }
-
-      // DOM loop checking exclusively if response securely matches the target identity logic natively
+      // Wait for the bot to return a matching profile OR explicit no-results
       try {
         await page.waitForFunction(
           (args: { baseline: number; normalized: string; isNumeric: boolean }) => {
             const els = Array.from(document.querySelectorAll('.msg-text')).slice(Number(args.baseline));
+            if (!els.length) return false;
+            if (els.some((el) => {
+              const t = (el.textContent || '').toLowerCase();
+              return t.includes('there are no results for this search') || t.includes('no results found');
+            })) return true;
             return els.some((el) => {
               const txt = (el.textContent || '').toLowerCase();
-
-              if (txt.includes('there are no results for this search') || txt.includes('no results found')) {
-                return true;
-              }
-
-              const hasProfile = /id\s*:\s*\d+/i.test(txt) && (/username\s*:/i.test(txt) || /title\s*:/i.test(txt));
-              if (!hasProfile) return false;
-
+              if (!/id\s*:\s*\d+/i.test(txt)) return false;
               if (!args.normalized) return true;
               if (args.isNumeric) {
-                return new RegExp(`id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt);
+                return new RegExp(`(?:^|\\s)id\\s*:\\s*${args.normalized}\\b`, 'i').test(txt);
               }
-
-              const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((match) => match[1]);
+              const handles = Array.from(txt.matchAll(/@([a-z0-9_]{3,})/g)).map((m) => m[1]);
               if (handles.includes(args.normalized)) return true;
-
               const usernameLine = txt.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
-              if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) {
-                return true;
-              }
-
+              if (usernameLine === args.normalized || usernameLine.replace(/^@/, '') === args.normalized) return true;
               const titleLine = txt.match(/title\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
               return titleLine === args.normalized;
             });
           },
-          {
-            baseline: baselineMessageCount,
-            normalized: normalizedQuery,
-            isNumeric: queryIsNumeric,
-          },
+          { baseline: baselineMessageCount, normalized: normalizedQuery, isNumeric: queryIsNumeric },
           { timeout: this.RESULT_WAIT_TIMEOUT_MS },
         );
       } catch {
-        // Native timeout bypass executed on missing profiles
+        // Timeout — proceed to re-verify
       }
 
-      // Apply rigorous string validation checks across returned Nodes natively
+      // Scroll to bottom to ensure latest messages are rendered
+      await page.evaluate(() => {
+        const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
+        if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+      });
+      await page.waitForTimeout(300);
+
+      // Re-verify: scan newest-first, stop at first profile or no-results
       const finalMessages = await page.$$('.msg-text');
-      let foundNoResults = false;
       for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
         const text = await finalMessages[i].innerText();
         const lowText = text.toLowerCase();
         if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
-          foundNoResults = true;
-          break;
+          throw new Error('TGDB_NO_RESULTS');
         }
-
-        if (/id\s*:\s*\d+/i.test(text)
-          && (/username\s*:/i.test(text) || /title\s*:/i.test(text))
-          && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
+        if (/id\s*:\s*\d+/i.test(text) && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
           profileText = text;
           break;
         }
       }
 
-      if (foundNoResults) throw new Error('TGDB_NO_RESULTS');
       if (!profileText) throw new Error('TARGET_NOT_FOUND');
 
       // Target Nearby Users specific flow button rendering clicks

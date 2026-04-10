@@ -171,13 +171,13 @@ function transformChannelAnalysisToBookmarkFormat(apiResponse: ApiResponse): Tra
 class TelegramService {
     private readonly CREDITS_PER_REQUEST = 1;
     private readonly PROXY_REQUEST_TOTAL_TIMEOUT_MS = Math.min(
-        Number(process.env.PROXY_REQUEST_TOTAL_TIMEOUT_MS || 25000),
-        25000,
+        Number(process.env.PROXY_REQUEST_TOTAL_TIMEOUT_MS || 90000),
+        90000,
     );
-    private readonly BKPSCH_FALLBACK_TIMEOUT_MS = Number(process.env.BKPSCH_FALLBACK_TIMEOUT_MS || 25000);
+    private readonly BKPSCH_FALLBACK_TIMEOUT_MS = Number(process.env.BKPSCH_FALLBACK_TIMEOUT_MS || 80000);
     private readonly BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS = Math.min(
-        Number(process.env.BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS || 25000),
-        25000,
+        Number(process.env.BKPSCH_FALLBACK_TOTAL_TIMEOUT_MS || 80000),
+        80000,
     );
     private readonly BKPSCH_FALLBACK_RETRY_DELAY_MS = Number(process.env.BKPSCH_FALLBACK_RETRY_DELAY_MS || 0);
     private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 1;

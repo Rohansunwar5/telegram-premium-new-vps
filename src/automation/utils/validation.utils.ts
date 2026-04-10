@@ -31,14 +31,12 @@ export function messageMatchesQuery(text: string, normalizedQuery: string, query
   const normalizedText = String(text || '').toLowerCase();
   
   // IMMEDIATELY ABORT validation if bot returned "there are no results for this search"
-  // This explicitly prevents it from validating random older outputs below it in the chat DOM.
   if (normalizedText.includes('there are no results for this search') || normalizedText.includes('no results found')) {
     return false;
   }
 
-  // Strict numeric id regex matching (since names can't purely be digits natively)
   if (queryIsNumeric) {
-    return new RegExp(`id\\s*:\\s*${normalizedQuery}\\b`, 'i').test(normalizedText);
+    return new RegExp(`(?:^|\\s)id\\s*:\\s*${normalizedQuery}\\b`, 'i').test(normalizedText);
   }
 
   // Exact matching against specific @ handles via MatchAll
@@ -49,7 +47,6 @@ export function messageMatchesQuery(text: string, normalizedQuery: string, query
 
   // Parses username explicitly checking line content
   const usernameLine = normalizedText.match(/username\s*:\s*([^\n]+)/i)?.[1]?.trim() || '';
-  // Force exactly-equal comparisons to circumvent `foo` substring-matching `foobar` incorrectly
   if (usernameLine === normalizedQuery || usernameLine.replace(/^@/, '') === normalizedQuery) {
     return true;
   }
