@@ -133,16 +133,16 @@ export class ChannelService {
         }
     }
 
-    async analyzeChannel(channelUsername: string, language: string = 'english'): Promise<any> {
+    async analyzeChannel(channelUsername: string, language: string = 'english', analysisType: 'simple' | 'comprehensive' = 'comprehensive'): Promise<any> {
         try {
             const triggerWords = ['important', 'urgent', 'announcement', 'update'];
             const scrapeResult = await this.extractorService.getMessages(channelUsername);
-            
+
             if (!scrapeResult.messages || scrapeResult.messages.length === 0) {
                 throw new BadRequestError('No messages found for analysis');
             }
 
-            const analysisResult = await this.summarizerService.analyzeTelegramGroup(scrapeResult, language);
+            const analysisResult = await this.summarizerService.analyzeTelegramGroup(scrapeResult, language, analysisType);
             const messageAnalysis = generateMessageStatistics(scrapeResult.messages, triggerWords);
 
             return {

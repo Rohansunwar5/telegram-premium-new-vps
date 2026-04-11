@@ -47,8 +47,8 @@ export const proxyRequest = async (req: Request, res: Response, next: NextFuncti
 
 export const analyzeChannel = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { channel_username, language } = req.body;
-        
+        const { channel_username, language, analysis_type } = req.body;
+
         if (!channel_username) {
             return res.status(400).json({ error: 'Channel username is required' });
         }
@@ -71,7 +71,9 @@ export const analyzeChannel = async (req: Request, res: Response, next: NextFunc
             });
         }
 
-        const response = await telegramService.analyzeChannel(channel_username, normalizedLanguage);
+        const analysisType: 'simple' | 'comprehensive' = analysis_type === 'simple' ? 'simple' : 'comprehensive';
+
+        const response = await telegramService.analyzeChannel(channel_username, normalizedLanguage, analysisType);
         res.json(response);
     } catch (error) {
         next(error);

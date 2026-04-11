@@ -35,7 +35,39 @@ export class GptSummarizerService {
         `;
     }
 
-    async analyzeTelegramGroup(messagesData: any, responseLanguage: string = "english"): Promise<any> {
+    private _createSimpleAnalysisPrompt(
+        totalMessages: number,
+        userActivity: Record<string, any>,
+        userSummary: string,
+        messageText: string,
+        languageInstruction: string
+    ): string {
+        return `
+        Analyze this Telegram channel based on the last ${totalMessages} messages:
+
+        TOTAL MESSAGES ANALYZED: ${totalMessages}
+        TOTAL UNIQUE USERS: ${Object.keys(userActivity).length}
+
+        TOP ACTIVE USERS:
+        ${userSummary}
+
+        RECENT MESSAGES:
+        ${messageText}
+
+        Please provide a comprehensive analysis covering (translate if the messages are from language other than English):
+        1. Channel Overview (detailed summary)
+        2. Most active users and their messages and mention
+        3. Give me Alias Pivoting (Actor Enumeration)
+        4. Textual Pattern Mining
+        5. Human Trafficking / Adult Scam Connections (if any)
+        6. Cryptocurrency Indicators (Hidden) if any
+        7. User-to-Alias Relationship Map in text
+        8. Key Insights
+        ${languageInstruction}
+        `;
+    }
+
+    async analyzeTelegramGroup(messagesData: any, responseLanguage: string = "english", analysisType: 'simple' | 'comprehensive' = 'comprehensive'): Promise<any> {
         try {
             const messages = messagesData.messages || [];
             const topUsers = messagesData.top_active_users || [];
@@ -43,38 +75,43 @@ export class GptSummarizerService {
             const totalMessages = messagesData.total_messages || 0;
             const top50Users = messagesData.top_50_users || [];
 
-            const messageText = messages.slice(0, 100).map((msg: any) => 
+            const messageText = messages.slice(0, 100).map((msg: any) =>
                 `[${msg.timestamp}] ${msg.sender}: ${msg.text.substring(0, 300)}`
             ).join('\n\n');
 
-            const userSummary = topUsers.map((u: any) => 
+            const userSummary = topUsers.map((u: any) =>
                 `- ${u[0]}: ${u[1]} messages (${(u[1] / totalMessages * 100).toFixed(1)}% of total)`
             ).join('\n');
 
-            const topUsersDetailed = top50Users.map((user: any) => 
+            const topUsersDetailed = top50Users.map((user: any) =>
                 `${user.rank}. ${user.display_name} (${user.telegram_handle}) - ${user.message_count} messages`
             ).join('\n');
 
             const languageInstruction = this._getLanguageInstruction(responseLanguage);
 
-            const prompt = `
+            let prompt: string;
+            if (analysisType === 'simple') {
+                prompt = this._createSimpleAnalysisPrompt(totalMessages, userActivity, userSummary, messageText, languageInstruction);
+            } else {
+                prompt = `
             Analyze this Telegram channel based on the last ${totalMessages} messages:
-            
+
             TOTAL MESSAGES ANALYZED: ${totalMessages}
             TOTAL UNIQUE USERS: ${Object.keys(userActivity).length}
-            
+
             TOP ACTIVE USERS:
             ${userSummary}
-            
+
             TOP 50 USERS WITH TELEGRAM HANDLES:
             ${topUsersDetailed}
-            
+
             RECENT MESSAGES:
             ${messageText}
-            
+
             ${this._getComprehensivePromptStructure()}
             ${languageInstruction}
             `;
+            }
 
             const response = await this.client.chat.completions.create({
                 model: "gpt-4o",

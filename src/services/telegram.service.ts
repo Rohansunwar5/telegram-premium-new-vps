@@ -955,11 +955,11 @@ class TelegramService {
         return data;
     }
 
-    public async analyzeChannel(channelUsername: string, language?: string): Promise<TransformedBookmarkData> {
+    public async analyzeChannel(channelUsername: string, language?: string, analysisType: 'simple' | 'comprehensive' = 'comprehensive'): Promise<TransformedBookmarkData> {
         try {
             const { ChannelService } = await import('./channel.service');
             const channelService = new ChannelService();
-            const responseData = await channelService.analyzeChannel(channelUsername, language || 'english');
+            const responseData = await channelService.analyzeChannel(channelUsername, language || 'english', analysisType);
 
             // Format to match ApiResponse interface so transformChannelAnalysisToBookmarkFormat can do its work
             const apiResponse: ApiResponse = {
