@@ -3,9 +3,12 @@ import config from '../config';
 import { createContext, sendChatMessage, waitForMessageStreamSettle, closeBrowser } from './utils/browser.utils';
 import { normalizeLookupValue, messageMatchesQuery } from './utils/validation.utils';
 import { Mutex } from '../utils/mutex';
+import logger from '../utils/logger';
 
 export class BkpschAutomation {
   private static readonly RESULT_WAIT_TIMEOUT_MS = 60000;
+  private static readonly PROFILE_GRACE_WINDOW_MS = 2500;
+  private static readonly PROFILE_POLL_INTERVAL_MS = 250;
   private static readonly mutex = new Mutex();
 
   /**
@@ -95,27 +98,51 @@ export class BkpschAutomation {
         // Timeout — proceed to re-verify loop
       }
 
-      // Scroll to bottom to ensure latest messages are rendered
+      // Scroll to bottom once before grace polling begins.
       await page.evaluate(() => {
         const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
         if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
       });
       await page.waitForTimeout(300);
 
-      // Re-verify: scan newest-first, stop at first profile or no-results
-      const finalMessages = await page.$$('.msg-text');
-      for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
-        const text = await finalMessages[i].innerText();
-        const lowText = text.toLowerCase();
-        if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
-          throw new Error('TGDB_NO_RESULTS');
+      // Grace re-check: gives streamed/late profile cards a brief window before declaring not found.
+      const profilePollAttempts = Math.ceil(this.PROFILE_GRACE_WINDOW_MS / this.PROFILE_POLL_INTERVAL_MS);
+      let foundOnAttempt = 0;
+      logger.info(
+        `[BkpschAutomation.executeChatFlow] Grace polling started query=${query} baseline=${baselineMessageCount} attempts=${profilePollAttempts} intervalMs=${this.PROFILE_POLL_INTERVAL_MS}`,
+      );
+      for (let attempt = 0; attempt < profilePollAttempts && !profileText; attempt++) {
+        await page.evaluate(() => {
+          const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
+          if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+        });
+
+        const finalMessages = await page.$$('.msg-text');
+        for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
+          const text = await finalMessages[i].innerText();
+          const lowText = text.toLowerCase();
+          if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
+            logger.warn(`[BkpschAutomation.executeChatFlow] TGDB no-results detected during grace polling query=${query} attempt=${attempt + 1}`);
+            throw new Error('TGDB_NO_RESULTS');
+          }
+          if (/id\s*:\s*\d+/i.test(text) && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
+            profileText = text;
+            foundOnAttempt = attempt + 1;
+            break;
+          }
         }
-        if (/id\s*:\s*\d+/i.test(text) && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
-          profileText = text;
-          break;
+
+        if (!profileText && attempt < profilePollAttempts - 1) {
+          await page.waitForTimeout(this.PROFILE_POLL_INTERVAL_MS);
         }
       }
 
+      if (profileText) {
+        logger.info(`[BkpschAutomation.executeChatFlow] Profile matched during grace polling query=${query} attempt=${foundOnAttempt || 1}`);
+      }
+      if (!profileText) {
+        logger.warn(`[BkpschAutomation.executeChatFlow] Grace polling exhausted without profile match query=${query} attempts=${profilePollAttempts}`);
+      }
       if (!profileText) throw new Error('TARGET_NOT_FOUND');
 
       // Wait for the groups link to appear — it renders in the same message block as the profile
@@ -327,27 +354,51 @@ export class BkpschAutomation {
         // Timeout — proceed to re-verify
       }
 
-      // Scroll to bottom to ensure latest messages are rendered
+      // Scroll to bottom once before grace polling begins.
       await page.evaluate(() => {
         const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
         if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
       });
       await page.waitForTimeout(300);
 
-      // Re-verify: scan newest-first, stop at first profile or no-results
-      const finalMessages = await page.$$('.msg-text');
-      for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
-        const text = await finalMessages[i].innerText();
-        const lowText = text.toLowerCase();
-        if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
-          throw new Error('TGDB_NO_RESULTS');
+      // Grace re-check: gives streamed/late profile cards a brief window before declaring not found.
+      const profilePollAttempts = Math.ceil(this.PROFILE_GRACE_WINDOW_MS / this.PROFILE_POLL_INTERVAL_MS);
+      let foundOnAttempt = 0;
+      logger.info(
+        `[BkpschAutomation.executeNearbyFlow] Grace polling started query=${query} baseline=${baselineMessageCount} attempts=${profilePollAttempts} intervalMs=${this.PROFILE_POLL_INTERVAL_MS}`,
+      );
+      for (let attempt = 0; attempt < profilePollAttempts && !profileText; attempt++) {
+        await page.evaluate(() => {
+          const scrollable = document.querySelector('.MessageList') || document.querySelector('.scrollable') || document.querySelector('.chat-list') || document.documentElement;
+          if (scrollable) scrollable.scrollTop = scrollable.scrollHeight;
+        });
+
+        const finalMessages = await page.$$('.msg-text');
+        for (let i = finalMessages.length - 1; i >= baselineMessageCount; i--) {
+          const text = await finalMessages[i].innerText();
+          const lowText = text.toLowerCase();
+          if (lowText.includes('there are no results for this search') || lowText.includes('no results found')) {
+            logger.warn(`[BkpschAutomation.executeNearbyFlow] TGDB no-results detected during grace polling query=${query} attempt=${attempt + 1}`);
+            throw new Error('TGDB_NO_RESULTS');
+          }
+          if (/id\s*:\s*\d+/i.test(text) && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
+            profileText = text;
+            foundOnAttempt = attempt + 1;
+            break;
+          }
         }
-        if (/id\s*:\s*\d+/i.test(text) && messageMatchesQuery(text, normalizedQuery, queryIsNumeric)) {
-          profileText = text;
-          break;
+
+        if (!profileText && attempt < profilePollAttempts - 1) {
+          await page.waitForTimeout(this.PROFILE_POLL_INTERVAL_MS);
         }
       }
 
+      if (profileText) {
+        logger.info(`[BkpschAutomation.executeNearbyFlow] Profile matched during grace polling query=${query} attempt=${foundOnAttempt || 1}`);
+      }
+      if (!profileText) {
+        logger.warn(`[BkpschAutomation.executeNearbyFlow] Grace polling exhausted without profile match query=${query} attempts=${profilePollAttempts}`);
+      }
       if (!profileText) throw new Error('TARGET_NOT_FOUND');
 
       // Target Nearby Users specific flow button rendering clicks
