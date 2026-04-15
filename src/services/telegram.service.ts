@@ -176,7 +176,7 @@ class TelegramService {
         80000,
     );
     private readonly BKPSCH_FALLBACK_RETRY_DELAY_MS = Number(process.env.BKPSCH_FALLBACK_RETRY_DELAY_MS || 0);
-    private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 1;
+    private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 2;
 
     constructor(private readonly _userRepository: UserRepository) { }
 
