@@ -100,19 +100,14 @@ export const checkPhoneNumber = async (req: Request, res: Response, next: NextFu
 export const tgDev = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { channel_name, user_id } = req.body;
-        
-        const response = await axios.post('https://msgchan.darkmap.org/fetch_messages/', 
-            new URLSearchParams({ channel_name, user_id }), {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
-            
-        res.json(response.data);
+
+        const response = await telegramService.fetchUserMessages(channel_name, user_id);
+
+        res.json(response);
     } catch (error:any) {
         logger.error(`tgDev proxy error: ${error?.message || String(error)}`);
         res.status(500).json({ error: error.message });
     }
 
-}; 
+};
 

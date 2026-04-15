@@ -5,10 +5,6 @@ import { BkpschAutomation } from '../automation/bkpsch.automation';
 import { InternalServerError } from '../errors/internal-server.error';
 import { NotFoundError } from '../errors/not-found.error';
 import { BadRequestError } from '../errors/bad-request.error';
-import { UnauthorizedError } from '../errors/unauthorized.error';
-import { ForbiddenError } from '../errors/forbidden.error';
-import { RequestValidationError } from '../errors/request-validation.error';
-import { TooManyRequestsError } from '../errors/too-many-request.error';
 import logger from '../utils/logger';
 
 interface ApiResponse {
@@ -72,7 +68,7 @@ interface TransformedBookmarkData {
     firstMessageEver: Date | null;
     lastMessageEver: Date | null;
     lastStatisticsUpdate: Date;
-    
+
     // Additional analysis data (preserved from API)
     analysis: string;
     accountUsed: number;
@@ -138,7 +134,7 @@ function transformChannelAnalysisToBookmarkFormat(apiResponse: ApiResponse): Tra
         firstMessageEver: apiResponse.timestamps.first_message ? new Date(apiResponse.timestamps.first_message) : null,
         lastMessageEver: apiResponse.timestamps.last_message ? new Date(apiResponse.timestamps.last_message) : null,
         lastStatisticsUpdate: new Date(apiResponse.processed_at),
-        
+
         // Additional analysis data (preserved from API)
         analysis: apiResponse.analysis,
         accountUsed: apiResponse.account_used,
@@ -181,8 +177,8 @@ class TelegramService {
     );
     private readonly BKPSCH_FALLBACK_RETRY_DELAY_MS = Number(process.env.BKPSCH_FALLBACK_RETRY_DELAY_MS || 0);
     private readonly BKPSCH_FALLBACK_MAX_ATTEMPTS = 1;
-    
-    constructor(private readonly _userRepository: UserRepository) {}
+
+    constructor(private readonly _userRepository: UserRepository) { }
 
     private normalizeLookupValue(value: string | null | undefined): string {
         return String(value || '')
@@ -212,7 +208,7 @@ class TelegramService {
         userInfoText: string,
     ) {
         const normalizedExtractedTitle = String(extractedTitle || '').trim();
-        
+
         let isValid = false;
         let validationDetails = '';
 
@@ -264,7 +260,7 @@ class TelegramService {
     async searchChannels(searchQuery: string) {
         const response = await axios.post(
             'https://4phuyf7tlf.execute-api.us-east-1.amazonaws.com/prod/tg',
-            { search_query: searchQuery }, 
+            { search_query: searchQuery },
             {
                 headers: {
                     'Content-Type': 'application/json',
@@ -293,7 +289,7 @@ class TelegramService {
         if (response.status !== 200) {
             throw new InternalServerError('Failed to add channel');
         }
-        
+
         return response.data;
     }
 
@@ -310,6 +306,24 @@ class TelegramService {
 
         if (response.status !== 200) {
             throw new InternalServerError('Failed to get channel messages');
+        }
+
+        return response.data;
+    }
+
+    async fetchUserMessages(channelName: string, userId: string) {
+        const response = await axios.post(
+            'https://4phuyf7tlf.execute-api.us-east-1.amazonaws.com/prod/get_tg_msg',
+            { channel_name: channelName, user_id: userId },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        if (response.status !== 200) {
+            throw new InternalServerError('Failed to fetch user messages');
         }
 
         return response.data;
@@ -333,11 +347,11 @@ class TelegramService {
     async makeProxyRequest(userId: string, query: string) {
         await this.checkUserCredits(userId);
         const response = await this.proxyRequest(query);
-        
+
         if (this.isSuccessfulResponse(response)) {
             await this.deductCredits(userId, this.CREDITS_PER_REQUEST);
         }
-        
+
         return response;
     }
 
@@ -369,11 +383,11 @@ class TelegramService {
         const data = response.data;
         const phoneKey = Object.keys(data)[0];
         const userData = data[phoneKey];
-        
+
         if (!userData || !userData.id) {
             throw new NotFoundError('No user found for this phone number');
         }
-        
+
         return {
             success: true,
             userId: userData.id,
@@ -653,7 +667,7 @@ class TelegramService {
 
     private parseCsvGroups(csvData: string | null, fallbackTimestamp: string): Array<{ title: string; id: string | number; date_updated: string; username?: string }> {
         const groups: Array<{ title: string; id: string | number; date_updated: string; username?: string }> = [];
-        
+
         if (!csvData) return groups;
 
         const lines = csvData
@@ -815,7 +829,7 @@ class TelegramService {
                 maxBudgetMs,
             );
             const userInfoText = [profileText, result].filter((part): part is string => Boolean(part)).join('\n');
-            
+
             // 1. Extract user info safely
             const titleMatch = userInfoText ? userInfoText.match(/title:\s*([^\n]+)/i) : null;
             const nameMatch = userInfoText
@@ -850,7 +864,7 @@ class TelegramService {
             };
 
             this.validateFallbackPayload(validation, csvData, extractedTitle, user, userInfoText);
-            
+
             // 3. Normalize fallback groups so title/username pairs are consistent for frontend links.
             const groupsWithUsernames = this.normalizeFallbackGroups(
                 userInfoText || result || '',
@@ -877,7 +891,7 @@ class TelegramService {
                 status: "ok",
                 result: parsedData
             };
-            
+
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             throw new Error(`Fallback failed: ${errorMessage}`);
