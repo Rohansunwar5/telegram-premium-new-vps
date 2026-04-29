@@ -312,21 +312,32 @@ class TelegramService {
     }
 
     async fetchUserMessages(channelName: string, userId: string) {
-        const response = await axios.post(
-            'https://4phuyf7tlf.execute-api.us-east-1.amazonaws.com/prod/get_tg_msg',
-            { channel_name: channelName, user_id: userId },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
+        const numericUserId = /^\d+$/.test(userId) ? parseInt(userId, 10) : userId;
+        const lastError: Error[] = [];
 
-        if (response.status !== 200) {
-            throw new InternalServerError('Failed to fetch user messages');
+        // Retry once — Lambda may have hit a bad/expired session on first attempt
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const response = await axios.post(
+                    'https://4phuyf7tlf.execute-api.us-east-1.amazonaws.com/prod/get_tg_msg',
+                    { channel_name: channelName, user_id: numericUserId },
+                    {
+                        headers: { 'Content-Type': 'application/json' },
+                        timeout: 30000,
+                    }
+                );
+                return response.data;
+            } catch (err: any) {
+                const status = err?.response?.status;
+                const body = err?.response?.data;
+                logger.error(`fetchUserMessages attempt ${attempt + 1} failed — status: ${status}, body: ${JSON.stringify(body)}`);
+                lastError.push(err);
+                // Only retry on 500; bail immediately on 4xx
+                if (status && status < 500) break;
+            }
         }
 
-        return response.data;
+        throw new InternalServerError('Failed to fetch user messages from Lambda');
     }
 
     async checkUserCredits(userId: string) {
