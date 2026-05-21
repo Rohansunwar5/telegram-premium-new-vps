@@ -1,52 +1,40 @@
 import Bull from 'bull';
-import Redis from 'ioredis';
 import config from './index';
 
-const redisConnection = new Redis({
-  host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-  port: Number(13142),
-  password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6',
+const localRedisConfig = {
+  host: config.REDIS_LOCAL_HOST,
+  port: config.REDIS_LOCAL_PORT,
+  // Required by Bull/ioredis when used with blocking commands
   maxRetriesPerRequest: null,
-  enableReadyCheck: false
-});
+  enableReadyCheck: false,
+};
 
-// Queue for scraping channels
 export const scrapeQueue = new Bull('scrape-queue', {
-  redis: {
-    host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-    port: Number(13142),
-    password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6'
-  },
+  redis: localRedisConfig,
   defaultJobOptions: {
     removeOnComplete: 100,
     removeOnFail: 50,
     attempts: 3,
     backoff: {
       type: 'exponential',
-      delay: 2000
-    }
-  }
+      delay: 2000,
+    },
+  },
 });
 
-// Queue for processing alerts
 export const alertQueue = new Bull('alert-queue', {
-  redis: {
-    host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-    port: Number(13142),
-    password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6'
-  },
+  redis: localRedisConfig,
   defaultJobOptions: {
     removeOnComplete: 50,
     removeOnFail: 25,
     attempts: 3,
     backoff: {
       type: 'exponential',
-      delay: 2000
-    }
-  }
+      delay: 2000,
+    },
+  },
 });
 
-// Queue event listeners
 scrapeQueue.on('completed', (job) => {
   console.log(`Scrape job ${job.id} completed for bookmark ${job.data.bookmarkId}`);
 });
@@ -62,5 +50,3 @@ alertQueue.on('completed', (job) => {
 alertQueue.on('failed', (job, err) => {
   console.error(`Alert job ${job.id} failed:`, err);
 });
-
-export { redisConnection };

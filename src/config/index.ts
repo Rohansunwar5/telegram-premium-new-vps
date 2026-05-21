@@ -30,6 +30,14 @@ const config = {
   BKPSCH_AUTH_FILE_PATH: (process.env.BKPSCH_AUTH_FILE_PATH || 'auth/bkpsch.auth.json') as string,
   BKPSCH_CHROME_DATA_DIR: (process.env.BKPSCH_CHROME_DATA_DIR || 'auth/bkpsch.chrome_data') as string,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY as string,
+  OPENAI_DECOY_MODEL: (process.env.OPENAI_DECOY_MODEL || 'gpt-4o-mini') as string,
+
+  // Local Redis — used by Bull queues, cache client, and Socket.IO adapter
+  REDIS_LOCAL_HOST: (process.env.REDIS_LOCAL_HOST || '127.0.0.1') as string,
+  REDIS_LOCAL_PORT: Number(process.env.REDIS_LOCAL_PORT || '6379') as number,
+
+  ADMIN_JWT_SECRET: process.env.ADMIN_JWT_SECRET! as string,
+
   DEFAULT_COUNTRY_CODE: 'IN',
 };
 

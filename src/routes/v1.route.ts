@@ -7,6 +7,8 @@ import paymentRouter from './payment.route';
 import bookmarkRouter from './bookmark.route';
 import bkpschRouter from './bkpsch.route';
 import channelRouter from './channel.routes';
+import decoyBotRouter from './decoyBot.route';
+import decoyAdminRouter from './decoyAdmin.route';
 
 const v1Router = Router();
 
@@ -19,5 +21,7 @@ v1Router.use('/channel', channelRouter);
 v1Router.get('/country', asyncHandler(country));
 v1Router.use('/payment', paymentRouter);
 v1Router.use('/bkpsch', bkpschRouter);
+v1Router.use('/ai-chatbot', decoyBotRouter);
+v1Router.use('/admin', decoyAdminRouter);
 
 export default v1Router;
