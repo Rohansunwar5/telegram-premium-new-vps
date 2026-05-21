@@ -5,9 +5,6 @@ dotenv.config();
 const config = {
   MONGO_URI: process.env.MONGO_URI! as string,
   NODE_ENV: process.env.NODE_ENV! as string,
-  REDIS_HOST: process.env.REDIS_HOST! as string,
-  REDIS_PORT: process.env.REDIS_PORT! as string,
-  REDIS_PASSWORD: process.env.REDIS_PASSORD! as string,
   PORT: process.env.PORT! as string,
   JWT_SECRET: process.env.JWT_SECRET! as string,
   ACCESS_TOKEN_EXPIRY: process.env.ACCESS_TOKEN_EXPIRY! as string,
@@ -32,7 +29,6 @@ const config = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY as string,
   OPENAI_DECOY_MODEL: (process.env.OPENAI_DECOY_MODEL || 'gpt-4o-mini') as string,
 
-  // Local Redis — used by Bull queues, cache client, and Socket.IO adapter
   REDIS_LOCAL_HOST: (process.env.REDIS_LOCAL_HOST || '127.0.0.1') as string,
   REDIS_LOCAL_PORT: Number(process.env.REDIS_LOCAL_PORT || '6379') as number,
 

@@ -20,6 +20,27 @@ jobs:
           script: |
             export NVM_DIR="$HOME/.nvm"
             source "$NVM_DIR/nvm.sh"
+
+            # --- Local Redis --------------------------------------------------
+            if ! command -v redis-server &> /dev/null; then
+              echo "Installing Redis..."
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq redis-server
+            else
+              echo "Redis already installed"
+            fi
+
+            # Ensure Redis is running with minimal config
+            if ! pgrep redis-server &> /dev/null; then
+              echo "Starting Redis..."
+              sudo sed -i 's/^bind 127.0.0.1 -::1/bind 127.0.0.1/' /etc/redis/redis.conf
+              sudo sed -i 's/^supervised .*/supervised no/' /etc/redis/redis.conf
+              sudo redis-server /etc/redis/redis.conf --daemonize yes
+            else
+              echo "Redis already running"
+            fi
+            # ------------------------------------------------------------------
+
             cd ~/telegram-premium
             git fetch origin
             git reset --hard origin/main

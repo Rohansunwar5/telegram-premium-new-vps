@@ -14,7 +14,6 @@ const redisClient = redis.createClient({
       return Math.min(retries * 100, 3000);
     },
   },
-  // Do not buffer commands while disconnected — fail fast so callers can handle it
   disableOfflineQueue: true,
 });
 

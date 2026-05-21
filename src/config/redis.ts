@@ -1,16 +1,15 @@
 import Bull from 'bull';
 import config from './index';
 
-const localRedisConfig = {
+const redisConfig = {
   host: config.REDIS_LOCAL_HOST,
   port: config.REDIS_LOCAL_PORT,
-  // Required by Bull/ioredis when used with blocking commands
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
 };
 
 export const scrapeQueue = new Bull('scrape-queue', {
-  redis: localRedisConfig,
+  redis: redisConfig,
   defaultJobOptions: {
     removeOnComplete: 100,
     removeOnFail: 50,
@@ -23,7 +22,7 @@ export const scrapeQueue = new Bull('scrape-queue', {
 });
 
 export const alertQueue = new Bull('alert-queue', {
-  redis: localRedisConfig,
+  redis: redisConfig,
   defaultJobOptions: {
     removeOnComplete: 50,
     removeOnFail: 25,
