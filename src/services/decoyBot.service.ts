@@ -686,6 +686,9 @@ export class DecoyBotService {
 
   // Acquire the shared client for this decoy account, creating one if needed.
   // Concurrent acquires for the same account dedupe through accountConnecting.
+  // AUTH_KEY_DUPLICATED (happens when a previous process didn't disconnect
+  // cleanly on restart) is retried with backoff — Telegram releases the old
+  // key within seconds once it detects the previous connection dropped.
   private async _acquireClient(account: IDecoyTelegramAccount): Promise<TelegramClient> {
     const accountId = account._id.toString();
     const existing = this.accountClients.get(accountId);
@@ -697,9 +700,27 @@ export class DecoyBotService {
     let inflight = this.accountConnecting.get(accountId);
     if (!inflight) {
       inflight = (async () => {
-        const client = await this._connectClient(account);
-        this.accountClients.set(accountId, { client, refCount: 0 });
-        return client;
+        const RETRY_DELAYS = [5_000, 10_000, 20_000]; // 3 attempts: 5s, 10s, 20s
+        for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+          try {
+            const client = await this._connectClient(account);
+            this.accountClients.set(accountId, { client, refCount: 0 });
+            return client;
+          } catch (err: any) {
+            const isDuplicate = err?.message?.includes('AUTH_KEY_DUPLICATED');
+            if (isDuplicate && attempt < RETRY_DELAYS.length) {
+              const delay = RETRY_DELAYS[attempt];
+              logger.warn(
+                `[DecoyBot] AUTH_KEY_DUPLICATED for account ${accountId} — ` +
+                `retrying in ${delay / 1000}s (attempt ${attempt + 1}/${RETRY_DELAYS.length})`
+              );
+              await new Promise((res) => setTimeout(res, delay));
+            } else {
+              throw err;
+            }
+          }
+        }
+        throw new Error('Failed to connect: AUTH_KEY_DUPLICATED persists after retries');
       })();
       this.accountConnecting.set(accountId, inflight);
     }

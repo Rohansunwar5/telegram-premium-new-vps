@@ -45,7 +45,11 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             npm install
-            npx playwright install chromium
             npm run build
-            pm2 restart telegram-premium-server
+
+            # Graceful stop — lets the app disconnect all Telegram sessions
+            # cleanly before the new process starts (prevents AUTH_KEY_DUPLICATED)
+            pm2 stop telegram-premium-server || true
+            sleep 5
+            pm2 start telegram-premium-server
             pm2 save
