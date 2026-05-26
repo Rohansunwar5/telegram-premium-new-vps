@@ -27,6 +27,18 @@ export const addAccount = async (req: Request, res: Response, next: NextFunction
   next({ account, statusCode: 201, msg: 'Decoy account added' });
 };
 
+export const updateSessionString = async (req: Request, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { sessionString } = req.body;
+
+  const account = await accountRepo.findById(id);
+  if (!account) throw new NotFoundError('Account not found');
+
+  await DecoyTelegramAccountModel.findByIdAndUpdate(id, { sessionString });
+
+  next({ statusCode: 200, msg: 'Session string updated. Resume paused sessions to reconnect.' });
+};
+
 export const deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;
 

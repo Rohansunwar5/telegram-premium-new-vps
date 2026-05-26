@@ -13,3 +13,9 @@ export const accountIdParamValidator = [
   isMongoId('id'),
   ...validateRequest,
 ];
+
+export const updateSessionStringValidator = [
+  isMongoId('id'),
+  isRequired('sessionString'),
+  ...validateRequest,
+];
