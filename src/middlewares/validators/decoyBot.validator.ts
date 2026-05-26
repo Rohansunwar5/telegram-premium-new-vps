@@ -5,6 +5,7 @@ export const createSessionValidator = [
   isRequired('targetIdentifier'),
   isMaxRequired({ key: 'targetContext', limit: 1000 }),
   isRequired('targetName', true),
+  isMongoId('decoyAccountId', true),
   ...validateRequest,
 ];
 

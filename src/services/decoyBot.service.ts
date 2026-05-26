@@ -91,6 +91,11 @@ export class DecoyBotService {
   private consecutiveErrors = new Map<string, number>();
   private pollingActive = new Map<string, boolean>();
   private sessionAccounts = new Map<string, string>();
+  // Shared TelegramClient pool keyed by decoy accountId. One MTProto connection
+  // is multiplexed across every session using the same decoy account, so the
+  // same StringSession is never opened twice (which would cause AUTH_KEY_DUPLICATED).
+  private accountClients = new Map<string, { client: TelegramClient; refCount: number }>();
+  private accountConnecting = new Map<string, Promise<TelegramClient>>();
   // Background reply scheduling — one pending reply per session at a time
   private pendingReplies = new Map<string, ReturnType<typeof setTimeout>>();
   private pendingImages = new Map<string, Buffer>();
@@ -128,12 +133,12 @@ export class DecoyBotService {
     const account = await this.accountRepo.findById(session.decoyAccountId.toString());
     if (!account) {
       logger.error(`[DecoyBot] startSession: decoy account not found for session ${sessionId}`);
-      await this.stopSession(sessionId, 'stopped', 'Decoy account not found');
+      await this.stopSession(sessionId, 'paused', 'Decoy account not found');
       return;
     }
 
     try {
-      const client = await this._connectClient(account);
+      const client = await this._acquireClient(account);
       this.clients.set(sessionId, client);
       this.sessionAccounts.set(sessionId, account._id.toString());
 
@@ -170,7 +175,7 @@ export class DecoyBotService {
       logger.info(`[DecoyBot] Session ${sessionId} started (target=${session.targetIdentifier})`);
     } catch (err: any) {
       logger.error(`[DecoyBot] Failed to start session ${sessionId}:`, err.message);
-      await this.stopSession(sessionId, 'stopped', err.message);
+      await this.stopSession(sessionId, 'paused', err.message);
     }
   }
 
@@ -197,18 +202,17 @@ export class DecoyBotService {
       this.onlinePresence.delete(sessionId);
     }
 
-    const client = this.clients.get(sessionId);
-    if (client) {
-      try { await client.disconnect(); } catch { /* ignore */ }
-      this.clients.delete(sessionId);
-    }
-
+    this.clients.delete(sessionId);
     this.targetEntities.delete(sessionId);
     this.consecutiveErrors.delete(sessionId);
     this.pollingActive.delete(sessionId);
 
     const accountId = this.sessionAccounts.get(sessionId);
     this.sessionAccounts.delete(sessionId);
+
+    if (accountId) {
+      await this._releaseClient(accountId);
+    }
 
     await this.sessionRepo.updateStatus(sessionId, newStatus);
 
@@ -233,23 +237,22 @@ export class DecoyBotService {
   async sendManualMessage(sessionId: string, text: string): Promise<IDecoyMessage> {
     const session = await this.sessionRepo.findById(sessionId);
     if (!session) throw new Error('Session not found');
-    if (session.status === 'stopped') throw new Error('Cannot send to a stopped session');
 
     let client = this.clients.get(sessionId);
-    let tempClient = false;
+    let tempAccountId: string | null = null;
 
     if (!client) {
       const account = await this.accountRepo.findById(session.decoyAccountId.toString());
       if (!account) throw new Error('Decoy account not found');
-      client = await this._connectClient(account);
-      tempClient = true;
+      client = await this._acquireClient(account);
+      tempAccountId = account._id.toString();
     }
 
     try {
       let entity = this.targetEntities.get(sessionId);
       if (!entity) {
         entity = await client.getEntity(session.targetIdentifier);
-        if (!tempClient) this.targetEntities.set(sessionId, entity);
+        if (!tempAccountId) this.targetEntities.set(sessionId, entity);
       }
 
       await (client as any).sendMessage(entity, { message: text });
@@ -270,8 +273,8 @@ export class DecoyBotService {
       emitToSession(sessionId, 'decoy:message', msg);
       return msg;
     } finally {
-      if (tempClient) {
-        try { await client.disconnect(); } catch { /* ignore */ }
+      if (tempAccountId) {
+        await this._releaseClient(tempAccountId);
       }
     }
   }
@@ -448,8 +451,8 @@ export class DecoyBotService {
         `[DecoyBot] Poll error (${errorCount}/${MAX_CONSECUTIVE_ERRORS}) session=${sessionId}: ${err.message}`
       );
       if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
-        logger.error(`[DecoyBot] Session ${sessionId} exceeded error budget — auto-stopping`);
-        await this.stopSession(sessionId, 'stopped', 'Auto-stopped: too many consecutive errors');
+        logger.error(`[DecoyBot] Session ${sessionId} exceeded error budget — auto-pausing`);
+        await this.stopSession(sessionId, 'paused', 'Auto-paused: too many consecutive errors');
       }
     } finally {
       this.pollingActive.set(sessionId, false);
@@ -679,6 +682,46 @@ export class DecoyBotService {
     (client as any).setLogLevel('none');
     await client.connect();
     return client;
+  }
+
+  // Acquire the shared client for this decoy account, creating one if needed.
+  // Concurrent acquires for the same account dedupe through accountConnecting.
+  private async _acquireClient(account: IDecoyTelegramAccount): Promise<TelegramClient> {
+    const accountId = account._id.toString();
+    const existing = this.accountClients.get(accountId);
+    if (existing) {
+      existing.refCount += 1;
+      return existing.client;
+    }
+
+    let inflight = this.accountConnecting.get(accountId);
+    if (!inflight) {
+      inflight = (async () => {
+        const client = await this._connectClient(account);
+        this.accountClients.set(accountId, { client, refCount: 0 });
+        return client;
+      })();
+      this.accountConnecting.set(accountId, inflight);
+    }
+
+    try {
+      const client = await inflight;
+      const entry = this.accountClients.get(accountId);
+      if (entry) entry.refCount += 1;
+      return client;
+    } finally {
+      this.accountConnecting.delete(accountId);
+    }
+  }
+
+  private async _releaseClient(accountId: string): Promise<void> {
+    const entry = this.accountClients.get(accountId);
+    if (!entry) return;
+    entry.refCount -= 1;
+    if (entry.refCount <= 0) {
+      this.accountClients.delete(accountId);
+      try { await entry.client.disconnect(); } catch { /* ignore */ }
+    }
   }
 
   private async _initialiseWatermark(

@@ -11,6 +11,17 @@ import logger from '../utils/logger';
 const sessionRepo = new DecoySessionRepository();
 const accountRepo = new DecoyAccountRepository();
 
+// Soft-warning thresholds for the account-picker dropdown.
+// 'high' = visible caution; 'overloaded' = strong warning. Tune as needed.
+const HIGH_LOAD_THRESHOLD = 5;
+const OVERLOAD_THRESHOLD = 10;
+
+const loadWarning = (count: number): 'ok' | 'high' | 'overloaded' => {
+  if (count >= OVERLOAD_THRESHOLD) return 'overloaded';
+  if (count >= HIGH_LOAD_THRESHOLD) return 'high';
+  return 'ok';
+};
+
 // Dispatches a decoy action to the bot service.
 // In dev: calls the singleton directly (process.send is undefined in non-workers).
 // In prod workers: sends IPC to the master which owns the service.
@@ -39,9 +50,23 @@ function dispatch(type: 'DECOY_START' | 'DECOY_STOP' | 'DECOY_RESUME', payload: 
   }
 }
 
+export const listAccounts = async (req: Request, res: Response, next: NextFunction) => {
+  const accounts = await accountRepo.listOrderedByLoad();
+  const items = accounts.map((a) => {
+    const activeSessionCount = a.activeSessions?.length ?? 0;
+    return {
+      _id: a._id.toString(),
+      phoneNumber: a.phoneNumber,
+      activeSessionCount,
+      warning: loadWarning(activeSessionCount),
+    };
+  });
+  next({ accounts: items, statusCode: 200, msg: 'Decoy accounts fetched' });
+};
+
 export const createSession = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;
-  const { targetIdentifier, targetContext, targetName } = req.body;
+  const { targetIdentifier, targetContext, targetName, decoyAccountId } = req.body;
 
   if (!targetContext || !targetContext.trim()) {
     throw new BadRequestError('targetContext is required');
@@ -49,8 +74,16 @@ export const createSession = async (req: Request, res: Response, next: NextFunct
 
   const systemPrompt = buildSystemPrompt(targetContext.trim());
 
-  const account = await accountRepo.findAvailableAccount();
-  if (!account) throw new BadRequestError('No decoy accounts available. Please add a Telegram account first.');
+  const account = decoyAccountId
+    ? await accountRepo.findById(decoyAccountId)
+    : await accountRepo.findAvailableAccount();
+  if (!account) {
+    throw new BadRequestError(
+      decoyAccountId
+        ? 'Selected decoy account not found.'
+        : 'No decoy accounts available. Please add a Telegram account first.'
+    );
+  }
 
   const session = await sessionRepo.create({
     userId,
@@ -109,7 +142,6 @@ export const resumeSession = async (req: Request, res: Response, next: NextFunct
   if (!session) throw new NotFoundError('Session not found');
   if (session.userId.toString() !== userId.toString()) throw new ForbiddenError('Access denied');
   if (session.status === 'active') throw new BadRequestError('Session is already active');
-  if (session.status === 'stopped') throw new BadRequestError('Stopped sessions cannot be resumed');
 
   dispatch('DECOY_RESUME', { sessionId: id });
 

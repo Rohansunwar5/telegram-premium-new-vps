@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/asynchandler';
 import {
   createSession,
   listSessions,
+  listAccounts,
   getMessages,
   pauseSession,
   resumeSession,
@@ -18,6 +19,7 @@ const decoyBotRouter = Router();
 
 decoyBotRouter.post('/', isLoggedIn, createSessionValidator, asyncHandler(createSession));
 decoyBotRouter.get('/', isLoggedIn, asyncHandler(listSessions));
+decoyBotRouter.get('/accounts', isLoggedIn, asyncHandler(listAccounts));
 decoyBotRouter.get('/:id/messages', isLoggedIn, sessionIdParamValidator, asyncHandler(getMessages));
 decoyBotRouter.post('/:id/stop', isLoggedIn, sessionIdParamValidator, asyncHandler(pauseSession));
 decoyBotRouter.post('/:id/resume', isLoggedIn, sessionIdParamValidator, asyncHandler(resumeSession));

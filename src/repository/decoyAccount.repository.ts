@@ -57,4 +57,16 @@ export class DecoyAccountRepository {
   async findAll(): Promise<IDecoyTelegramAccount[]> {
     return DecoyTelegramAccountModel.find().sort({ createdAt: 1 });
   }
+
+  /**
+   * Return all accounts, sorted by current load (fewest active sessions first).
+   * Used to power the account-picker dropdown — least-loaded account appears on top.
+   */
+  async listOrderedByLoad(): Promise<IDecoyTelegramAccount[]> {
+    const accounts = await DecoyTelegramAccountModel.find().lean();
+    accounts.sort(
+      (a, b) => (a.activeSessions?.length ?? 0) - (b.activeSessions?.length ?? 0)
+    );
+    return accounts as unknown as IDecoyTelegramAccount[];
+  }
 }
