@@ -6,6 +6,7 @@ import { NotFoundError } from '../errors/not-found.error';
 import { ForbiddenError } from '../errors/forbidden.error';
 import { getDecoyBotService } from '../services/decoyBot.singleton';
 import { buildSystemPrompt } from '../services/decoyAI.service';
+import { emitToSession } from '../socket/emitter';
 import logger from '../utils/logger';
 
 const sessionRepo = new DecoySessionRepository();
@@ -172,4 +173,36 @@ export const manualSend = async (req: Request, res: Response, next: NextFunction
 
   const saved = await svc.sendManualMessage(id, message.trim());
   next({ message: saved, statusCode: 200, msg: 'Message sent' });
+};
+
+export const deleteSession = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { id } = req.params;
+
+  const session = await sessionRepo.findById(id);
+  if (!session) throw new NotFoundError('Session not found');
+  if (session.userId.toString() !== userId.toString()) throw new ForbiddenError('Access denied');
+
+  if (session.status !== 'stopped') {
+    dispatch('DECOY_STOP', { sessionId: id, stopStatus: 'stopped' });
+  }
+
+  await accountRepo.releaseAccount(session.decoyAccountId.toString(), id);
+  await sessionRepo.deleteById(id);
+
+  next({ data: null, statusCode: 200, msg: 'Session deleted successfully' });
+};
+
+export const resetUnseen = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { id } = req.params;
+
+  const session = await sessionRepo.findById(id);
+  if (!session) throw new NotFoundError('Session not found');
+  if (session.userId.toString() !== userId.toString()) throw new ForbiddenError('Access denied');
+
+  await sessionRepo.resetUnseenCount(id);
+  emitToSession(id, 'decoy:unseen_reset', { sessionId: id });
+  
+  next({ data: null, statusCode: 200, msg: 'Unseen count reset' });
 };

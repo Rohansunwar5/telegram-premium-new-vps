@@ -88,6 +88,10 @@ const decoySessionSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    unseenCount: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );
@@ -118,6 +122,7 @@ export interface IDecoySession extends mongoose.Document {
   status: 'active' | 'paused' | 'stopped';
   messages: IDecoyMessage[];
   lastPolledAt: Date | null;
+  unseenCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
