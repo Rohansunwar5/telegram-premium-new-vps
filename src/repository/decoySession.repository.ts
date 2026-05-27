@@ -36,6 +36,18 @@ export class DecoySessionRepository {
     return DecoySessionModel.findById(sessionId);
   }
 
+  async deleteById(sessionId: string): Promise<void> {
+    await DecoySessionModel.findByIdAndDelete(sessionId);
+  }
+
+  async incrementUnseenCount(sessionId: string, count: number = 1): Promise<void> {
+    await DecoySessionModel.findByIdAndUpdate(sessionId, { $inc: { unseenCount: count } });
+  }
+
+  async resetUnseenCount(sessionId: string): Promise<void> {
+    await DecoySessionModel.findByIdAndUpdate(sessionId, { unseenCount: 0 });
+  }
+
   async findAllByUser(userId: string): Promise<IDecoySession[]> {
     return DecoySessionModel.find({ userId })
       .select('-messages') // Exclude messages from list view — fetched separately

@@ -409,6 +409,7 @@ export class DecoyBotService {
         lastPolledAt: new Date(),
         lastProcessedMsgId: newWatermark,
       });
+      await this.sessionRepo.incrementUnseenCount(sessionId, targetMessages.length);
       for (const msg of targetMessages) {
         emitToSession(sessionId, 'decoy:message', msg);
       }

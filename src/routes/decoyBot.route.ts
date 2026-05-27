@@ -9,6 +9,8 @@ import {
   pauseSession,
   resumeSession,
   manualSend,
+  deleteSession,
+  resetUnseen,
 } from '../controllers/decoyBot.controller';
 import {
   createSessionValidator,
@@ -24,5 +26,7 @@ decoyBotRouter.get('/:id/messages', isLoggedIn, sessionIdParamValidator, asyncHa
 decoyBotRouter.post('/:id/stop', isLoggedIn, sessionIdParamValidator, asyncHandler(pauseSession));
 decoyBotRouter.post('/:id/resume', isLoggedIn, sessionIdParamValidator, asyncHandler(resumeSession));
 decoyBotRouter.post('/:id/send', isLoggedIn, sessionIdParamValidator, asyncHandler(manualSend));
+decoyBotRouter.post('/:id/unseemsg', isLoggedIn, sessionIdParamValidator, asyncHandler(resetUnseen));
+decoyBotRouter.delete('/:id', isLoggedIn, sessionIdParamValidator, asyncHandler(deleteSession));
 
 export default decoyBotRouter;
