@@ -72,6 +72,18 @@ export const createSession = async (req: Request, res: Response, next: NextFunct
     throw new BadRequestError('targetContext is required');
   }
 
+  if (!targetIdentifier || !targetIdentifier.trim()) {
+    throw new BadRequestError('targetIdentifier is required');
+  }
+
+  const existing = await sessionRepo.findLiveByUserAndTarget(userId, targetIdentifier);
+  if (existing) {
+    throw new BadRequestError(
+      `A session for "${targetIdentifier}" is already ${existing.status}. ` +
+      `Resume or stop the existing session before creating a new one.`
+    );
+  }
+
   const systemPrompt = buildSystemPrompt(targetContext.trim());
 
   const account = decoyAccountId

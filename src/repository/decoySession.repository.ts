@@ -125,4 +125,20 @@ export class DecoySessionRepository {
   async findStatus(sessionId: string): Promise<{ status: string } | null> {
     return DecoySessionModel.findById(sessionId, { status: 1 }).lean();
   }
+
+  // Find a non-stopped session this user already has running against the same
+  // target. Match is case-insensitive and ignores an optional leading '@' on
+  // either side so '@Rohan_Codes' and 'rohan_codes' resolve to the same target.
+  async findLiveByUserAndTarget(
+    userId: string,
+    targetIdentifier: string
+  ): Promise<IDecoySession | null> {
+    const bare = targetIdentifier.trim().replace(/^@/, '');
+    const escaped = bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return DecoySessionModel.findOne({
+      userId,
+      status: { $in: ['active', 'paused'] },
+      targetIdentifier: { $regex: `^@?${escaped}$`, $options: 'i' },
+    });
+  }
 }
