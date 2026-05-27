@@ -297,6 +297,14 @@ export class DecoyBotService {
     await Promise.allSettled(sessionIds.map((id) => this.stopSession(id, newStatus)));
   }
 
+  // Synchronous best-effort disconnect — safe to call from process 'exit' event.
+  disconnectAllClients(): void {
+    for (const [, entry] of this.accountClients) {
+      try { entry.client.disconnect(); } catch { /* ignore */ }
+    }
+    this.accountClients.clear();
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   //  Polling core
   // ─────────────────────────────────────────────────────────────────────────
@@ -700,7 +708,7 @@ export class DecoyBotService {
     let inflight = this.accountConnecting.get(accountId);
     if (!inflight) {
       inflight = (async () => {
-        const RETRY_DELAYS = [5_000, 10_000, 20_000]; // 3 attempts: 5s, 10s, 20s
+        const RETRY_DELAYS = [15_000, 30_000, 60_000, 90_000]; // 4 attempts; Telegram keepalive can take 60-120s
         for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
           try {
             const client = await this._connectClient(account);

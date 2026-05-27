@@ -191,6 +191,14 @@ import redisClient from './services/cache';
       // Register so controllers can call the service directly in dev mode
       setDecoyBotService(decoyBotService);
 
+      // Best-effort disconnect on hard exit (ts-node-dev reload, uncaught throw, etc.)
+      // so Telegram releases the auth key before the new process connects.
+      process.on('exit', () => { decoyBotService?.disconnectAllClients?.(); });
+      process.on('uncaughtException', (err) => {
+        logger.error('Uncaught exception — disconnecting all decoy clients', err);
+        decoyBotService?.disconnectAllClients?.();
+      });
+
       try {
         await decoyBotService.resumeActiveSessions();
       } catch (err) {
