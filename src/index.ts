@@ -72,6 +72,11 @@ import redisClient from './services/cache';
       logger.error('Failed to resume active decoy sessions:', err);
     }
 
+    // Signal PM2 (wait_ready) that the master has finished resuming decoy
+    // sessions. PM2 only kills the previous instance once this fires, giving a
+    // clean Telegram handoff on deploy (no overlapping connections).
+    if (process.send) process.send('ready');
+
     type DecoyIpcMessage = {
       type: 'DECOY_START' | 'DECOY_STOP' | 'DECOY_RESUME';
       sessionId: string;

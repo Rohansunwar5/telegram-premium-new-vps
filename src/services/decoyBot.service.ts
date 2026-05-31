@@ -7,6 +7,7 @@ import { DecoyAccountRepository } from '../repository/decoyAccount.repository';
 import { DecoyAIService } from './decoyAI.service';
 import { uploadBufferToS3 } from '../utils/s3.util';
 import { emitToSession } from '../socket/emitter';
+import config from '../config';
 import logger from '../utils/logger';
 
 const POLL_INTERVAL_MS = 5000;
@@ -103,6 +104,8 @@ export class DecoyBotService {
   private lastTargetMsgIds = new Map<string, number>();
   private ghostFollowUpTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private onlinePresence = new Map<string, ReturnType<typeof setTimeout>>();
+  // One delayed self-heal retry per session after an AUTH_KEY_DUPLICATED pause.
+  private authDupRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private readonly sessionRepo: DecoySessionRepository,
@@ -115,6 +118,14 @@ export class DecoyBotService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async startSession(sessionId: string): Promise<void> {
+    if (!config.DECOY_BOT_ENABLED) {
+      logger.warn(
+        `[DecoyBot] DECOY_BOT_ENABLED=false — refusing to start session ${sessionId}. ` +
+        `The decoy bot is disabled in this environment to avoid AUTH_KEY_DUPLICATED ` +
+        `conflicts with the live server sharing the same session strings.`
+      );
+      return;
+    }
     if (this.intervals.has(sessionId)) {
       logger.warn(`[DecoyBot] startSession called for already-running session ${sessionId}`);
       return;
@@ -176,6 +187,27 @@ export class DecoyBotService {
     } catch (err: any) {
       logger.error(`[DecoyBot] Failed to start session ${sessionId}:`, err.message);
       await this.stopSession(sessionId, 'paused', err.message);
+
+      // Self-heal: AUTH_KEY_DUPLICATED after a hard crash means the previous
+      // process's connection is still lingering on Telegram's side. It clears
+      // within a few minutes, so schedule ONE delayed resume rather than
+      // leaving the session paused for a human to click. Only one timer per
+      // session — a second failure will not stack retries.
+      const isAuthDup = err?.message?.includes('AUTH_KEY_DUPLICATED');
+      if (isAuthDup && config.DECOY_BOT_ENABLED && !this.authDupRetryTimers.has(sessionId)) {
+        const RETRY_AFTER_MS = 5 * 60 * 1000;
+        logger.warn(
+          `[DecoyBot] Session ${sessionId} hit AUTH_KEY_DUPLICATED — ` +
+          `scheduling one self-heal resume in ${RETRY_AFTER_MS / 60000} min`
+        );
+        const timer = setTimeout(() => {
+          this.authDupRetryTimers.delete(sessionId);
+          this.resumeSession(sessionId).catch((e) =>
+            logger.error(`[DecoyBot] Self-heal resume failed for ${sessionId}:`, e)
+          );
+        }, RETRY_AFTER_MS);
+        this.authDupRetryTimers.set(sessionId, timer);
+      }
     }
   }
 
@@ -195,6 +227,15 @@ export class DecoyBotService {
     this.pendingImageKinds.delete(sessionId);
     this.lastTargetMsgIds.delete(sessionId);
     this._cancelGhostFollowUp(sessionId);
+
+    // Cancel any pending self-heal retry. In the AUTH_KEY_DUPLICATED path the
+    // catch block re-arms this timer *after* stopSession returns, so clearing
+    // here only kills retries from manual stops/resumes — exactly what we want.
+    const authDupTimer = this.authDupRetryTimers.get(sessionId);
+    if (authDupTimer) {
+      clearTimeout(authDupTimer);
+      this.authDupRetryTimers.delete(sessionId);
+    }
 
     const offlineTimer = this.onlinePresence.get(sessionId);
     if (offlineTimer) {
@@ -235,6 +276,9 @@ export class DecoyBotService {
   }
 
   async sendManualMessage(sessionId: string, text: string): Promise<IDecoyMessage> {
+    if (!config.DECOY_BOT_ENABLED) {
+      throw new Error('Decoy bot is disabled in this environment (DECOY_BOT_ENABLED=false)');
+    }
     const session = await this.sessionRepo.findById(sessionId);
     if (!session) throw new Error('Session not found');
 
@@ -490,6 +534,10 @@ export class DecoyBotService {
     if (!snapshot) return;
 
     const history = snapshot.messages as IDecoyMessage[];
+    const steering = {
+      objective: snapshot.standingObjective || '',
+      nudge: snapshot.pendingNudge || '',
+    };
 
     // Find unresponded target messages (everything after the last ai/manual message)
     const lastBotIdx = [...history].reverse().findIndex(
@@ -543,10 +591,10 @@ export class DecoyBotService {
         const imageBase64 = Buffer.from(imageBuf!).toString('base64');
         logger.info(`[DecoyBot] Vision call: base64Len=${imageBase64.length} caption="${visionCaption ?? '(none)'}"`);
         parts = await this.decoyAI.generateReplyWithImage(
-          snapshot.systemPrompt, historyForVision, imageBase64, visionCaption
+          snapshot.systemPrompt, historyForVision, imageBase64, visionCaption, steering
         );
       } else {
-        parts = await this.decoyAI.generateReply(snapshot.systemPrompt, history, combinedInput);
+        parts = await this.decoyAI.generateReply(snapshot.systemPrompt, history, combinedInput, steering);
       }
     } finally {
       stopTyping();
@@ -593,6 +641,9 @@ export class DecoyBotService {
     }
 
     await this.sessionRepo.appendMessages(sessionId, aiMessages);
+    if (steering.nudge) {
+      await this.sessionRepo.clearNudge(sessionId);
+    }
     for (const msg of aiMessages) {
       emitToSession(sessionId, 'decoy:message', msg);
     }
@@ -812,7 +863,9 @@ export class DecoyBotService {
         const entity = this.targetEntities.get(sessionId);
         if (!client || !entity) return;
 
-        const parts = await this.decoyAI.generateFollowUp(snapshot.systemPrompt, history);
+        const parts = await this.decoyAI.generateFollowUp(snapshot.systemPrompt, history, {
+          objective: snapshot.standingObjective || '',
+        });
         const stopTyping = this._startTypingLoop(client, entity);
         const followUpMsgs: IDecoyMessage[] = [];
         try {

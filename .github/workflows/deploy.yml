@@ -47,9 +47,11 @@ jobs:
             npm install
             npm run build
 
-            # Graceful stop — lets the app disconnect all Telegram sessions
-            # cleanly before the new process starts (prevents AUTH_KEY_DUPLICATED)
-            pm2 stop telegram-premium-server || true
-            sleep 5
-            pm2 start telegram-premium-server
+            # Reload via the ecosystem file. startOrReload honours the file's
+            # kill_timeout (30s) and wait_ready, so the OLD process fully
+            # disconnects every decoy session from Telegram before the NEW one
+            # connects. This clean handoff is what prevents AUTH_KEY_DUPLICATED.
+            # (The previous `pm2 stop && sleep 5 && pm2 start` force-killed the
+            # process after ~1.6s, mid-disconnect, causing the duplicate keys.)
+            pm2 startOrReload ecosystem.config.js --update-env
             pm2 save

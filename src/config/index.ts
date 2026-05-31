@@ -29,6 +29,13 @@ const config = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY as string,
   OPENAI_DECOY_MODEL: (process.env.OPENAI_DECOY_MODEL || 'gpt-4o-mini') as string,
 
+  // The decoy bot opens MTProto connections using each decoy account's session
+  // string. Telegram permits only ONE live connection per session string, so
+  // the bot must run in exactly one process. Set false in any environment that
+  // shares the same DB / session strings as the live server (e.g. local dev)
+  // to stop it from stealing the live connections (AUTH_KEY_DUPLICATED).
+  DECOY_BOT_ENABLED: (process.env.DECOY_BOT_ENABLED ? process.env.DECOY_BOT_ENABLED === 'true' : true) as boolean,
+
   REDIS_LOCAL_HOST: (process.env.REDIS_LOCAL_HOST || '127.0.0.1') as string,
   REDIS_LOCAL_PORT: Number(process.env.REDIS_LOCAL_PORT || '6379') as number,
 
