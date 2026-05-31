@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
 
 const scrapeDataSchema = new mongoose.Schema(
     {
@@ -17,7 +17,7 @@ const scrapeDataSchema = new mongoose.Schema(
             required: true,
         },
         messageCount: {
-            type: Number, 
+            type: Number,
             required: true,
         },
         firstMessageTimestamp: {
@@ -56,7 +56,7 @@ const scrapeDataSchema = new mongoose.Schema(
             uniqueUsersCount: Number
         },
         scrapedAt: {
-            type: Date, 
+            type: Date,
             default: Date.now,
         },
         isProcessed: {
@@ -84,14 +84,14 @@ export interface IScrapeData extends mongoose.Document {
   lastMessageTimestamp: Date;
   timeDifference: number;
   analysis?: {
-    frequencyHourly: number[]; 
-    frequencyUser: Map<string, number>; 
-    frequencyWeekday: Map<string, number>; 
+    frequencyHourly: number[];
+    frequencyUser: Map<string, number>;
+    frequencyWeekday: Map<string, number>;
     links: Array<{
       links: string[];
       messageId: number;
     }>;
-    triggerFrequency: Map<string, any>; 
+    triggerFrequency: Map<string, any>;
   };
   statistics?: {
     uniqueUsersCount: number;

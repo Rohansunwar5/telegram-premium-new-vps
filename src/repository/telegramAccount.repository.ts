@@ -3,7 +3,7 @@ import TelegramAccountModel, { ITelegramAccount } from '../models/telegramAccoun
 export class TelegramAccountRepository {
     async getNextAvailableAccount(excludeIndices: number[] = []): Promise<ITelegramAccount> {
         const now = new Date();
-        
+
         // Find accounts that are not in the exclude list and are not rate limited (or rate limit expired)
         const account = await TelegramAccountModel.findOne({
             index: { $nin: excludeIndices },
@@ -15,9 +15,9 @@ export class TelegramAccountRepository {
 
         if (!account) {
             if (excludeIndices.length > 0) {
-                throw new Error("All remaining accounts failed or are rate limited.");
+                throw new Error('All remaining accounts failed or are rate limited.');
             }
-            throw new Error("All accounts are currently rate limited. Please wait.");
+            throw new Error('All accounts are currently rate limited. Please wait.');
         }
 
         return account;
@@ -28,7 +28,7 @@ export class TelegramAccountRepository {
             $inc: { usageCount: 1 },
             lastUsed: new Date(),
             // Clear rate limit if it was successfully used
-            rateLimitedUntil: null, 
+            rateLimitedUntil: null,
         });
     }
 
@@ -42,14 +42,14 @@ export class TelegramAccountRepository {
     async getAccountsStatus(): Promise<any[]> {
         const accounts = await TelegramAccountModel.find().lean();
         const now = new Date();
-        
+
         return accounts.map(account => {
             let isRateLimited = false;
-            
+
             if (account.rateLimitedUntil) {
                 isRateLimited = now <= new Date(account.rateLimitedUntil);
             }
-            
+
             return {
                 index: account.index,
                 phoneNumber: account.phoneNumber,

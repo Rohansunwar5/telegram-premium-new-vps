@@ -8,4 +8,4 @@ const paymentRouter = Router();
 paymentRouter.post('/verify', isLoggedIn, asyncHandler(verifyPayment));
 paymentRouter.post('/create-order', isLoggedIn, asyncHandler(createOrder));
 
-export default paymentRouter; 
+export default paymentRouter;

@@ -11,10 +11,15 @@ import {
   manualSend,
   deleteSession,
   resetUnseen,
+  setObjective,
+  clearObjective,
+  sendNudge,
 } from '../controllers/decoyBot.controller';
 import {
   createSessionValidator,
   sessionIdParamValidator,
+  setObjectiveValidator,
+  setNudgeValidator,
 } from '../middlewares/validators/decoyBot.validator';
 
 const decoyBotRouter = Router();
@@ -27,6 +32,9 @@ decoyBotRouter.post('/:id/stop', isLoggedIn, sessionIdParamValidator, asyncHandl
 decoyBotRouter.post('/:id/resume', isLoggedIn, sessionIdParamValidator, asyncHandler(resumeSession));
 decoyBotRouter.post('/:id/send', isLoggedIn, sessionIdParamValidator, asyncHandler(manualSend));
 decoyBotRouter.post('/:id/unseemsg', isLoggedIn, sessionIdParamValidator, asyncHandler(resetUnseen));
+decoyBotRouter.put('/:id/objective', isLoggedIn, setObjectiveValidator, asyncHandler(setObjective));
+decoyBotRouter.delete('/:id/objective', isLoggedIn, sessionIdParamValidator, asyncHandler(clearObjective));
+decoyBotRouter.post('/:id/nudge', isLoggedIn, setNudgeValidator, asyncHandler(sendNudge));
 decoyBotRouter.delete('/:id', isLoggedIn, sessionIdParamValidator, asyncHandler(deleteSession));
 
 export default decoyBotRouter;

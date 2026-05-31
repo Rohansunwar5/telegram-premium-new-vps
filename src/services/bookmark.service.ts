@@ -1,14 +1,14 @@
-import { alertQueue, scrapeQueue } from "../config/redis";
-import { BadRequestError } from "../errors/bad-request.error";
-import { InternalServerError } from "../errors/internal-server.error";
-import { NotFoundError } from "../errors/not-found.error";
-import { IScrapeData } from "../models/scrapeData.model";
-import { BookmarkRepository } from "../repository/bookmark.repository";
-import { UserRepository } from "../repository/user.repository";
-import logger from "../utils/logger";
-import { ChannelService } from "./channel.service";
-import mailService from "./mail.service";
-import { S3Service } from "./s3.service";
+import { alertQueue, scrapeQueue } from '../config/redis';
+import { BadRequestError } from '../errors/bad-request.error';
+import { InternalServerError } from '../errors/internal-server.error';
+import { NotFoundError } from '../errors/not-found.error';
+import { IScrapeData } from '../models/scrapeData.model';
+import { BookmarkRepository } from '../repository/bookmark.repository';
+import { UserRepository } from '../repository/user.repository';
+import logger from '../utils/logger';
+import { ChannelService } from './channel.service';
+import mailService from './mail.service';
+import { S3Service } from './s3.service';
 
 
 interface IGetScrapeDataParams {
@@ -59,7 +59,7 @@ class BookmarkService {
         const existingBookmark = await this._bookmarkRepository.getBookmarkByUserAndChannel(userId, channelId);
 
         if(existingBookmark) throw new BadRequestError('Channel already bookmarked');
-        
+
 
         const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
         if (!timeRegex.test(alertTime)) throw new BadRequestError('Invalid alert time format. Use HH:mm format');
@@ -86,14 +86,14 @@ class BookmarkService {
 
         await this.scheduleAlertJob(bookmark);
 
-        return bookmark;   
+        return bookmark;
     }
 
     async getUserBookmarkslist(userId: string) {
         try {
             const bookmarks = await this._bookmarkRepository.getUserBookmarks(userId);
-            
-            return  bookmarks;
+
+            return bookmarks;
         } catch (error) {
             logger.error('Error getting user bookmarks:', error);
             throw new InternalServerError('Failed to retrieve user bookmarks');
@@ -155,14 +155,14 @@ class BookmarkService {
 
     async getUserBookmarks(userId: string) {
         const bookmarks = await this._bookmarkRepository.getUserBookmarks(userId);
-        
+
         // Get latest scrape data for each bookmark
         const bookmarksWithStatus = await Promise.all(
         bookmarks.map(async (bookmark) => {
             const latestScrape = await this._bookmarkRepository.getLatestScrapeData(
             bookmark._id.toString()
             );
-            
+
             return {
             ...bookmark.toObject(),
             lastScrapedAt: latestScrape?.scrapedAt || null,
@@ -187,10 +187,10 @@ class BookmarkService {
 
             const latestScrape = await this._bookmarkRepository.getLatestScrapeData(bookmarkId);
 
-            let scrapeParams: any = {
-                channelName, 
-                limit: 100, 
-            }
+            const scrapeParams: any = {
+                channelName,
+                limit: 100,
+            };
 
             // Add triggerWords if they exist
             if (bookmark.triggerWords && bookmark.triggerWords.length > 0) {
@@ -202,7 +202,7 @@ class BookmarkService {
             if (latestScrape && latestScrape.firstMessageTimestamp) {
                 const lastNewestMessage = latestScrape.firstMessageTimestamp; // This is the LATEST message from last scrape
                 logger.info(`📍 Last newest message was at: ${lastNewestMessage}`);
-                
+
                 // Only get messages NEWER than the latest message we already have
                 scrapeParams.since = lastNewestMessage;
                 scrapeParams.limit = null; // Remove limit to get all new messages
@@ -213,8 +213,8 @@ class BookmarkService {
             const scrapeResult = await this._channelService.scrapeChannel(scrapeParams);
 
             logger.info(`Scrape result for ${channelName}:  ${scrapeResult}`);
-            
-            if (!scrapeResult || !scrapeResult.messages || scrapeResult.messages.length === 0) 
+
+            if (!scrapeResult || !scrapeResult.messages || scrapeResult.messages.length === 0)
             {
                 if (latestScrape && latestScrape.timeDifference) {
                     const nextInterval = this.calculateScrapeInterval(latestScrape.timeDifference);
@@ -223,7 +223,7 @@ class BookmarkService {
                     // Default to 1 hour if no previous data
                     await this.scheduleNextScrape(bookmarkId, channelId, channelName, 60 * 60 * 1000);
                 }
-                
+
                 return {
                     messageCount: 0,
                     newMessages: false
@@ -234,21 +234,21 @@ class BookmarkService {
             let newMessages = scrapeResult.messages;
             if (latestScrape && latestScrape.firstMessageTimestamp) {
                 const lastNewestTime = new Date(latestScrape.firstMessageTimestamp).getTime();
-                
+
                 newMessages = scrapeResult.messages.filter((msg: any) => {
                     const msgTime = new Date(msg.timestamp_raw || msg.timestamp).getTime();
                     return msgTime > lastNewestTime;
                 });
-                
+
                 logger.info(`📊 Filtered: ${scrapeResult.messages.length} total, ${newMessages.length} truly new messages`);
             }
-        
+
             if (newMessages.length === 0) {
                 logger.info(`All messages were duplicates - skipping save`);
-                
-                // Schedule next scrape with longer interval (channel is less active 
+
+                // Schedule next scrape with longer interval (channel is less active
                 await this.scheduleNextScrape(bookmarkId, channelId, channelName, 2 * 60 * 60 * 1000);
-                
+
                 return {
                     messageCount: 0,
                     newMessages: false,
@@ -260,14 +260,14 @@ class BookmarkService {
             const firstTimestamp = new Date(newMessages[0].timestamp_raw || newMessages[0].timestamp);
             const lastTimestamp = new Date(newMessages[newMessages.length - 1].timestamp_raw || newMessages[newMessages.length - 1].timestamp);
             const timeDifference = Math.abs(lastTimestamp.getTime() - firstTimestamp.getTime());
-            
+
             // Save ONLY new messages to S3
             const timestamp = Date.now();
             const s3Key = `${bookmark.s3Prefix}/${timestamp}.json`;
-            
+
             logger.info(`💾 Saving ${newMessages.length} new messages to S3: ${s3Key}`);
             await this._s3Service.uploadJson(s3Key, newMessages);
-            
+
             // Save scrape metadata with updated camelCase field names
             const scrapeDataPayload: any = {
                 bookmarkId,
@@ -281,24 +281,24 @@ class BookmarkService {
 
             if (scrapeResult.analysis) {
                 logger.info(`📊 Processing analysis data: ${Object.keys(scrapeResult.analysis).join(', ')}`);
-                
+
                 scrapeDataPayload.analysis = {
                 frequencyHourly: scrapeResult.analysis.frequency_hourly || [],
-                frequencyUser: scrapeResult.analysis.frequency_user 
+                frequencyUser: scrapeResult.analysis.frequency_user
                     ? new Map(Object.entries(scrapeResult.analysis.frequency_user))
                     : new Map(),
-                frequencyWeekday: scrapeResult.analysis.frequency_weekday 
+                frequencyWeekday: scrapeResult.analysis.frequency_weekday
                     ? new Map(Object.entries(scrapeResult.analysis.frequency_weekday))
                     : new Map(),
                 links: (scrapeResult.analysis.links || []).map((linkGroup: any) => ({
                     links: linkGroup.links || [],
-                    messageId: linkGroup.message_id || 0 
+                    messageId: linkGroup.message_id || 0
                 })),
-                triggerFrequency: scrapeResult.analysis.trigger_frequency 
+                triggerFrequency: scrapeResult.analysis.trigger_frequency
                     ? new Map(Object.entries(scrapeResult.analysis.trigger_frequency))
                     : new Map()
                 };
-                
+
                 logger.info(`📊 Analysis data prepared:`, {
                     hourlyCount: scrapeDataPayload.analysis.frequencyHourly.length,
                     userCount: scrapeDataPayload.analysis.frequencyUser.size,
@@ -310,11 +310,11 @@ class BookmarkService {
 
             if (scrapeResult.statistics) {
                 logger.info(`📈 Processing statistics data: ${Object.keys(scrapeResult.statistics).join(', ')}`);
-                
+
                 scrapeDataPayload.statistics = {
-                    uniqueUsersCount: scrapeResult.statistics.unique_users_count 
+                    uniqueUsersCount: scrapeResult.statistics.unique_users_count
                 };
-                
+
                 logger.info(`📈 Statistics data prepared: ${scrapeDataPayload.statistics.uniqueUsersCount} unique users`);
             }
 
@@ -336,29 +336,29 @@ class BookmarkService {
             });
 
             await this.updateBookmarkAggregateStatistics(bookmarkId, scrapeData);
-            
+
             // Calculate next scrape interval based on activity
             const nextScrapeInterval = this.calculateScrapeInterval(timeDifference);
             const nextScrapeAt = new Date(Date.now() + nextScrapeInterval);
-            
+
             // Update bookmark with next scrape time
             await this._bookmarkRepository.updateBookmark(bookmarkId, {
                 lastScrapedAt: new Date(),
                 nextScrapeAt,
                 scrapeInterval: nextScrapeInterval
             });
-            
+
             // Schedule next scrape
             await this.scheduleNextScrape(bookmarkId, channelId, channelName, nextScrapeInterval);
-            
+
             logger.info(`✅ Scrape completed: ${newMessages.length} new messages saved`);
             logger.info(`⏰ Next scrape scheduled in ${this.formatInterval(nextScrapeInterval)}`);
-            
+
             return {
                 ...scrapeData.toObject(),
                 newMessagesCount: newMessages.length,
-                latestMessageTime: firstTimestamp,  // For clarity
-                oldestMessageTime: lastTimestamp     // For clarity
+                latestMessageTime: firstTimestamp, // For clarity
+                oldestMessageTime: lastTimestamp // For clarity
             };
         } catch (error) {
             logger.error(`Error processing scrape job for bookmark ${bookmarkId}:`, error);
@@ -379,9 +379,9 @@ class BookmarkService {
             // Initialize aggregate statistics if not present
             updates.totalMessages = (bookmark.totalMessages || 0) + scrapeData.messageCount;
             updates.totalScrapes = (bookmark.totalScrapes || 0) + 1;
-            
+
             logger.info(`📊 Updating statistics - Messages: +${scrapeData.messageCount}, Scrapes: +1`);
-            
+
             // Update unique users (take the maximum as it's cumulative)
             if (scrapeData.statistics?.uniqueUsersCount) {
                 const oldUniqueUsers = bookmark.uniqueUsersTotal || 0;
@@ -392,10 +392,10 @@ class BookmarkService {
             // Update hourly frequency
             if (scrapeData.analysis?.frequencyHourly && Array.isArray(scrapeData.analysis.frequencyHourly)) {
                 logger.info(`⏰ Processing hourly frequency data with ${scrapeData.analysis.frequencyHourly.length} hours`);
-                
+
                 const currentHourly = bookmark.frequencyHourly || new Array(24).fill(0);
                 updates.frequencyHourly = [...currentHourly];
-                
+
                 scrapeData.analysis.frequencyHourly.forEach((count, hour) => {
                     if (hour >= 0 && hour < 24 && typeof count === 'number') {
                         updates.frequencyHourly[hour] = (updates.frequencyHourly[hour] || 0) + count;
@@ -409,10 +409,10 @@ class BookmarkService {
             // Update user frequency
             if (scrapeData.analysis?.frequencyUser && scrapeData.analysis.frequencyUser instanceof Map) {
                 logger.info(`👤 Processing user frequency data for ${scrapeData.analysis.frequencyUser.size} users`);
-                
+
                 const currentUserMap = bookmark.frequencyUser || new Map();
                 updates.frequencyUser = new Map(currentUserMap);
-                
+
                 scrapeData.analysis.frequencyUser.forEach((count, username) => {
                     const currentCount = updates.frequencyUser.get(username) || 0;
                     updates.frequencyUser.set(username, currentCount + count);
@@ -423,13 +423,13 @@ class BookmarkService {
             // Update weekday frequency
             if (scrapeData.analysis?.frequencyWeekday && scrapeData.analysis.frequencyWeekday instanceof Map) {
                 logger.info(`📅 Processing weekday frequency data for ${scrapeData.analysis.frequencyWeekday.size} days`);
-                
+
                 const currentWeekdayMap = bookmark.frequencyWeekday || new Map([
                     ['monday', 0], ['tuesday', 0], ['wednesday', 0],
                     ['thursday', 0], ['friday', 0], ['saturday', 0], ['sunday', 0]
                 ]);
                 updates.frequencyWeekday = new Map(currentWeekdayMap);
-                
+
                 scrapeData.analysis.frequencyWeekday.forEach((count, weekday) => {
                     const currentCount = updates.frequencyWeekday.get(weekday.toLowerCase()) || 0;
                     updates.frequencyWeekday.set(weekday.toLowerCase(), currentCount + count);
@@ -475,10 +475,10 @@ class BookmarkService {
     private calculateManualAlertTimeWindow(alertTime: string) {
         const now = new Date();
         const fromTime = new Date(now.getTime() - 24 * 60 * 60 * 1000); // Exactly 24 hours ago
-        
+
         console.log('Current time (now):', now.toISOString());
         console.log('24 hours ago:', fromTime.toISOString());
-        
+
         return {
             from: fromTime,
             to: now,
@@ -489,19 +489,19 @@ class BookmarkService {
 
     async triggerManualAlert(userId: string, bookmarkId: string) {
         const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-        
-        if (!bookmark) throw new NotFoundError('Bookmark not found')
 
-        if (bookmark.userId.toString() !== userId) throw new BadRequestError('Unauthorized to trigger alert for this bookmark')
+        if (!bookmark) throw new NotFoundError('Bookmark not found');
+
+        if (bookmark.userId.toString() !== userId) throw new BadRequestError('Unauthorized to trigger alert for this bookmark');
 
         const user = await this._userReposiotory.getUserById(bookmark.userId.toString());
-        if (!user || !user.email) throw new BadRequestError('User not found or email not set')
+        if (!user || !user.email) throw new BadRequestError('User not found or email not set');
 
         const timeWindow = this.calculateManualAlertTimeWindow(bookmark.alertTime);
-    
+
         const relevantScrapeData = await this._bookmarkRepository.getScrapeDataByTimeWindow(
-            bookmarkId, 
-            timeWindow.from, 
+            bookmarkId,
+            timeWindow.from,
             timeWindow.to
         );
 
@@ -542,7 +542,7 @@ class BookmarkService {
 
         const messageArrays = await Promise.all(messagePromises);
         const allMessages = messageArrays.flat();
-        
+
         if (allMessages.length === 0) {
             throw new BadRequestError('No messages could be retrieved from S3');
         }
@@ -553,7 +553,7 @@ class BookmarkService {
 
         await mailService.sendMail(
             user.email,
-            'channel-summary.ejs', 
+            'channel-summary.ejs',
             {
                 userName: user.firstName || 'User',
                 channelName: bookmark.channelName,
@@ -566,7 +566,7 @@ class BookmarkService {
             },
             `Manual Alert - ${bookmark.channelName}`
         );
-        
+
         logger.info(`Manual alert completed successfully for bookmark ${bookmarkId} without affecting scheduler`);
 
         return {
@@ -580,7 +580,7 @@ class BookmarkService {
             scrapeCount: relevantScrapeData.length,
         };
     }
-    
+
     async processAlertJob(bookmarkId: string) {
         try {
             const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
@@ -598,14 +598,14 @@ class BookmarkService {
 
             const user = await this._userReposiotory.getUserById(bookmark.userId.toString());
 
-            if(!user || !user.email) { 
+            if(!user || !user.email) {
                 logger.warn(`User ${bookmark.userId} not found or email not set`);
                 return;
             }
 
             // Get all unprocessed scrape data
             const scrapeDataList = await this._bookmarkRepository.getUnprocessedScrapeData(bookmarkId);
-            
+
             if (scrapeDataList.length === 0) {
                 console.log(`No new data to process for bookmark ${bookmarkId}`);
 
@@ -618,7 +618,7 @@ class BookmarkService {
                         lastChecked: new Date()
                     },
                     `No updates for ${bookmark.channelName}`
-                )
+                );
                 return {
                     bookmarkId,
                     channelName: bookmark.channelName,
@@ -630,7 +630,7 @@ class BookmarkService {
                 };
             }
 
-            
+
             logger.info(`📥 Fetching ${scrapeDataList.length} scrape data files from S3`);
 
             const messagePromises = scrapeDataList.map(async (scrapeData) => {
@@ -646,7 +646,7 @@ class BookmarkService {
             // Retrieve all messages from S3
             const messageArrays = await Promise.all(messagePromises);
             const allMessages = messageArrays.flat();
-            
+
             if (allMessages.length === 0) {
                 throw new Error('No messages could be retrieved from S3');
             }
@@ -666,7 +666,7 @@ class BookmarkService {
 
             await mailService.sendMail(
                 user.email,
-                'channel-summary.ejs', 
+                'channel-summary.ejs',
                 {
                     userName: user.firstName || 'User',
                     channelName: bookmark.channelName,
@@ -750,14 +750,14 @@ class BookmarkService {
             thursday: 4, friday: 5, saturday: 6
         };
 
-        // Creating cron expression for the alert time 
+        // Creating cron expression for the alert time
         const cronDays = bookmark.alertDays
             .map((day: string) => dayMap[day.toLowerCase()])
             .filter((day: number) => day !== undefined)
             .sort()
             .join(',');
-    
-        // Creating cron expression for the alert time 
+
+        // Creating cron expression for the alert time
         const cronExpression = `${minutes} ${hours} * * ${cronDays}`;
 
         console.log(`📅 Scheduling alert for bookmark ${bookmark._id} at ${bookmark.alertTime} IST on days: ${bookmark.alertDays.join(', ')}`);
@@ -771,17 +771,17 @@ class BookmarkService {
             {
                 repeat: {
                     cron: cronExpression,
-                    tz: 'Asia/Kolkata' 
+                    tz: 'Asia/Kolkata'
                 },
                 jobId: `alert-${bookmark._id}`
             }
-        )
+        );
         const now = new Date();
-        const nowIST = now.toLocaleString('en-IN', { 
+        const nowIST = now.toLocaleString('en-IN', {
             timeZone: 'Asia/Kolkata',
-            hour12: false 
+            hour12: false
         });
-        
+
         console.log(`⏰ Current IST time: ${nowIST}`);
         console.log(`⏰ Next alert will trigger at: ${bookmark.alertTime} IST`);
     }
@@ -789,7 +789,7 @@ class BookmarkService {
     async getBookmarkById(userId: string, bookmarkId: string) {
         try {
             const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-            
+
             if (!bookmark) {
                 throw new NotFoundError('Bookmark not found');
             }
@@ -811,7 +811,7 @@ class BookmarkService {
 
     async pauseBookmark(userId: string, bookmarkId: string) {
         const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-        
+
         if (!bookmark) {
             throw new NotFoundError('Bookmark not found');
         }
@@ -822,7 +822,7 @@ class BookmarkService {
 
         // Remove jobs from queues but don't delete bookmark
         const scrapeJobs = await scrapeQueue.getJobs(['waiting', 'delayed']);
-        const bookmarkScrapeJobs = scrapeJobs.filter(job => 
+        const bookmarkScrapeJobs = scrapeJobs.filter(job =>
             job.data.bookmarkId === bookmarkId
         );
 
@@ -834,7 +834,7 @@ class BookmarkService {
         // Remove repeatable alert job
         const repeatableJobs = await alertQueue.getRepeatableJobs();
         const alertJob = repeatableJobs.find(job => job.id === `alert-${bookmarkId}`);
-        
+
         if (alertJob) {
             await alertQueue.removeRepeatableByKey(alertJob.key);
             logger.info(`Removed alert job for bookmark ${bookmarkId}`);
@@ -851,7 +851,7 @@ class BookmarkService {
 
      async resumeBookmark(userId: string, bookmarkId: string) {
         const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-        
+
         if (!bookmark) {
             throw new NotFoundError('Bookmark not found');
         }
@@ -885,7 +885,7 @@ class BookmarkService {
 
      async triggerManualScrape(userId: string, bookmarkId: string) {
         const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-        
+
         if (!bookmark) {
             throw new NotFoundError('Bookmark not found');
         }
@@ -903,7 +903,7 @@ class BookmarkService {
             isManual: true
         }, {
             delay: 0,
-            priority: 1 
+            priority: 1
         });
 
         logger.info(`Manual scrape triggered for bookmark ${bookmarkId}, job ${job.id}`);
@@ -918,7 +918,7 @@ class BookmarkService {
 
     async getBookmarkStatus(userId: string, bookmarkId: string) {
         const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-        
+
         if (!bookmark) {
             throw new NotFoundError('Bookmark not found');
         }
@@ -929,16 +929,16 @@ class BookmarkService {
 
         // Get latest scrape data
         const latestScrape = await this._bookmarkRepository.getLatestScrapeData(bookmarkId);
-        
+
         // Get pending jobs
         const scrapeJobs = await scrapeQueue.getJobs(['waiting', 'delayed', 'active']);
         const alertJobs = await alertQueue.getJobs(['waiting', 'delayed', 'active']);
-        
-        const pendingScrapes = scrapeJobs.filter(job => 
+
+        const pendingScrapes = scrapeJobs.filter(job =>
             job.data.bookmarkId === bookmarkId
         );
-        
-        const pendingAlerts = alertJobs.filter(job => 
+
+        const pendingAlerts = alertJobs.filter(job =>
             job.data.bookmarkId === bookmarkId
         );
 
@@ -965,7 +965,7 @@ class BookmarkService {
                 scrapes: pendingScrapes.length,
                 alerts: pendingAlerts.length
             },
-            scrapeInterval: bookmark.scrapeInterval ? 
+            scrapeInterval: bookmark.scrapeInterval ?
                 this.formatInterval(bookmark.scrapeInterval) : null
         };
     }
@@ -973,7 +973,7 @@ class BookmarkService {
     private formatInterval(ms: number): string {
         const hours = Math.floor(ms / (1000 * 60 * 60));
         const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-        
+
         if (hours > 0) {
             return `${hours}h ${minutes}m`;
         }
@@ -982,7 +982,7 @@ class BookmarkService {
 
     async getBookmarkDashboardStats(bookmarkId: string, userId: string) {
     const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
-    
+
     if (!bookmark) {
         throw new NotFoundError('Bookmark not found');
     }
@@ -1017,12 +1017,12 @@ class BookmarkService {
         timeRange: {
             firstMessage: bookmark.firstMessageEver,
             lastMessage: bookmark.lastMessageEver,
-            totalDuration: bookmark.firstMessageEver && bookmark.lastMessageEver 
+            totalDuration: bookmark.firstMessageEver && bookmark.lastMessageEver
                 ? bookmark.lastMessageEver.getTime() - bookmark.firstMessageEver.getTime()
                 : null
         },
-        averageMessagesPerScrape: (bookmark.totalScrapes || 0) > 0 
-            ? Math.round((bookmark.totalMessages || 0) / bookmark.totalScrapes) 
+        averageMessagesPerScrape: (bookmark.totalScrapes || 0) > 0
+            ? Math.round((bookmark.totalMessages || 0) / bookmark.totalScrapes)
             : 0,
         mostActiveHour: serializedStats.frequencyHourly.indexOf(Math.max(...serializedStats.frequencyHourly)),
         topUsers: Object.entries(serializedStats.frequencyUser)
@@ -1056,7 +1056,7 @@ async getBookmarkScrapeData(params: IGetScrapeDataParams) {
 
     async getAllUserDashboardStats(userId: string) {
     const bookmarks = await this._bookmarkRepository.getUserBookmarks(userId);
-    
+
     const dashboardStats = bookmarks.map(bookmark => ({
         bookmarkId: bookmark._id,
         channelName: bookmark.channelName,
@@ -1068,8 +1068,8 @@ async getBookmarkScrapeData(params: IGetScrapeDataParams) {
             totalScrapes: bookmark.totalScrapes || 0,
             uniqueUsers: bookmark.uniqueUsersTotal || 0,
             totalLinks: bookmark.totalLinks || 0,
-            averageMessagesPerScrape: (bookmark.totalScrapes || 0) > 0 
-                ? Math.round((bookmark.totalMessages || 0) / bookmark.totalScrapes) 
+            averageMessagesPerScrape: (bookmark.totalScrapes || 0) > 0
+                ? Math.round((bookmark.totalMessages || 0) / bookmark.totalScrapes)
                 : 0,
             lastUpdate: bookmark.lastStatisticsUpdate,
             mostActiveDay: bookmark.frequencyWeekday && bookmark.frequencyWeekday.size > 0
@@ -1086,12 +1086,12 @@ async getBookmarkScrapeData(params: IGetScrapeDataParams) {
         acc.totalLinks += bookmark.summary.totalLinks;
         acc.activeBookmarksCount += bookmark.isActive ? 1 : 0;
         acc.totalBookmarksCount += 1;
-        
+
         // Track max unique users across all channels
         if (bookmark.summary.uniqueUsers > acc.maxUniqueUsersInChannel) {
             acc.maxUniqueUsersInChannel = bookmark.summary.uniqueUsers;
         }
-        
+
         return acc;
     }, {
         totalMessages: 0,
@@ -1106,9 +1106,9 @@ async getBookmarkScrapeData(params: IGetScrapeDataParams) {
         overallStats,
         bookmarks: dashboardStats
     };
-    
+
 }
-        
+
 }
 
 export default BookmarkService;

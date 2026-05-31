@@ -1,7 +1,7 @@
-import { Router } from "express";
-import isLoggedIn from "../middlewares/isLoggedIn.middleware";
-import { asyncHandler } from "../utils/asynchandler";
-import { createBookmark, deleteBookmark, getAllUserDashboardStats, getBookmarkById, getBookmarkScrapeData, getBookmarkSummary, getDashboardStats, getUserBookmarks, manualScrape, pauseBookmark, resumeBookmark, triggerAlert, updateBookmark } from "../controllers/bookmark.controller";
+import { Router } from 'express';
+import isLoggedIn from '../middlewares/isLoggedIn.middleware';
+import { asyncHandler } from '../utils/asynchandler';
+import { createBookmark, deleteBookmark, getAllUserDashboardStats, getBookmarkById, getBookmarkScrapeData, getBookmarkSummary, getDashboardStats, getUserBookmarks, manualScrape, pauseBookmark, resumeBookmark, triggerAlert, updateBookmark } from '../controllers/bookmark.controller';
 
 const bookmarkRouter = Router();
 

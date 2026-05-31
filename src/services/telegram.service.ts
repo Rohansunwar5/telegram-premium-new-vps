@@ -435,7 +435,7 @@ class TelegramService {
             });
 
             if (response.status !== 200) {
-                throw new InternalServerError("Failed to forward request");
+                throw new InternalServerError('Failed to forward request');
             }
 
             const sortedData = this.sortResponseData(response.data);
@@ -886,7 +886,7 @@ class TelegramService {
 
             // 4. Assemble frontend-friendly payload
             const parsedData = {
-                status: "ok",
+                status: 'ok',
                 user: user,
                 meta: {
                     num_groups: groupsWithUsernames.length
@@ -896,10 +896,10 @@ class TelegramService {
             };
 
             // Return matching the primary wrapper's expectation (`data.result`)
-            // The frontend (`Navbar.jsx`) expects `telegramResponse.data.success` logic, 
+            // The frontend (`Navbar.jsx`) expects `telegramResponse.data.success` logic,
             // but the `makeProxyRequest` returns `sortedData` directly which unwraps to just the object.
             return {
-                status: "ok",
+                status: 'ok',
                 result: parsedData
             };
 

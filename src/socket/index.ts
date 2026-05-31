@@ -126,10 +126,10 @@ export async function initSocketIO(httpServer: HttpServer): Promise<void> {
   logger.info('[Socket.IO] Redis adapter clients connected');
 
   io = new Server<
-    Record<string, never>,    // ClientToServerEvents
-    Record<string, never>,    // ServerToClientEvents — not strongly typed here, events are string-keyed
-    Record<string, never>,    // InterServerEvents
-    SocketData                // SocketData
+    Record<string, never>, // ClientToServerEvents
+    Record<string, never>, // ServerToClientEvents — not strongly typed here, events are string-keyed
+    Record<string, never>, // InterServerEvents
+    SocketData // SocketData
   >(httpServer, {
     cors: {
       origin: (origin, callback) => {

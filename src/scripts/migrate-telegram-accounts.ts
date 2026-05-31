@@ -23,36 +23,36 @@ async function migrateAccounts() {
         logger.info('Connected to MongoDB');
 
         const fileContent = JSON.stringify({
-  "accounts": [
+  'accounts': [
     {
-      "api_id": 27923329,
-      "api_hash": "e1a56ea6bafedd14a78afacabfa1a4da",
-      "session_string": "1AZWarzkBu3A_9k1qNE7yfMYRgRNnyp3B-yJTB-Rx94wCUClR3ZbL2Vcut_nctPe3HLPryE4hA9REQauPP-WuuXjm6axqyqnGmcCzFp8sPsjvQJIasmwshZLukYCaVLiWqTJoh05SLYnZFlb1FPjBAcAuZDzcJOrQgZJagB7cMQFAyAm1v-thR0wsWEG5zb7MRlxAY2ltAdK171iQHaOwOMCGiYczm1EmsCe3Nk95dnMC_L21du2_UdIGbquyvpIRGplj8HbsPG9uIMCKPtxIuiRqYpOZ5nJrFvZTlzDCp9zO_QPbuBwwfake7S-tIurOskKBKp75LODy70_5yY0X7EYtpG88FAw=",
-      "phone_number": "+19897248017",
-      "last_used": "2026-03-26T05:45:58.908956",
-      "rate_limited_until": "",
-      "usage_count": 46,
-      "index": 0
+      'api_id': 27923329,
+      'api_hash': 'e1a56ea6bafedd14a78afacabfa1a4da',
+      'session_string': '1AZWarzkBu3A_9k1qNE7yfMYRgRNnyp3B-yJTB-Rx94wCUClR3ZbL2Vcut_nctPe3HLPryE4hA9REQauPP-WuuXjm6axqyqnGmcCzFp8sPsjvQJIasmwshZLukYCaVLiWqTJoh05SLYnZFlb1FPjBAcAuZDzcJOrQgZJagB7cMQFAyAm1v-thR0wsWEG5zb7MRlxAY2ltAdK171iQHaOwOMCGiYczm1EmsCe3Nk95dnMC_L21du2_UdIGbquyvpIRGplj8HbsPG9uIMCKPtxIuiRqYpOZ5nJrFvZTlzDCp9zO_QPbuBwwfake7S-tIurOskKBKp75LODy70_5yY0X7EYtpG88FAw=',
+      'phone_number': '+19897248017',
+      'last_used': '2026-03-26T05:45:58.908956',
+      'rate_limited_until': '',
+      'usage_count': 46,
+      'index': 0
     },
     {
-      "api_id": 23526332,
-      "api_hash": "af1a47e91dfdaccce056f8a567e88f85",
-      "session_string": "1AZWarzcBuz9zUJ0zyUwmY2BZPd0MMlJY8gR2DKH1TYf4a4PfW6rABAbWUZy1TOlXMQrm3YtmzEM6iZR5JDZzpkmLMqHA07jfuIcMTutJs17QTyJEKsenJdWs4mBHO36QgGLdKyhKXIG-ZeQL04c7H8b3d2OVwvLZB957grjkQGCZpeaQNTK9IPDEymsPYwhpJMwxs1X9i4h_VypFe7r0cHsRxVhY-dhPL_tHLereaxmRsrIaet_kOG9byKX7Mj36j07oXk2GHxcIdm6thSqUrTb7sBfk_c7et-s9YgVUk_2AjX8UVCMxWh0gqU_Vyze60qraAL1qsPxeqVUaOS8lnqTGdHnQn8I=",
-      "phone_number": "+17737038467",
-      "last_used": "2026-03-26T04:29:47.937098",
-      "rate_limited_until": "",
-      "usage_count": 45,
-      "index": 1
+      'api_id': 23526332,
+      'api_hash': 'af1a47e91dfdaccce056f8a567e88f85',
+      'session_string': '1AZWarzcBuz9zUJ0zyUwmY2BZPd0MMlJY8gR2DKH1TYf4a4PfW6rABAbWUZy1TOlXMQrm3YtmzEM6iZR5JDZzpkmLMqHA07jfuIcMTutJs17QTyJEKsenJdWs4mBHO36QgGLdKyhKXIG-ZeQL04c7H8b3d2OVwvLZB957grjkQGCZpeaQNTK9IPDEymsPYwhpJMwxs1X9i4h_VypFe7r0cHsRxVhY-dhPL_tHLereaxmRsrIaet_kOG9byKX7Mj36j07oXk2GHxcIdm6thSqUrTb7sBfk_c7et-s9YgVUk_2AjX8UVCMxWh0gqU_Vyze60qraAL1qsPxeqVUaOS8lnqTGdHnQn8I=',
+      'phone_number': '+17737038467',
+      'last_used': '2026-03-26T04:29:47.937098',
+      'rate_limited_until': '',
+      'usage_count': 45,
+      'index': 1
     },
     {
-      "api_id": 23594991,
-      "api_hash": "4be96a83e4a7cf10d9a9b78d870dbc31",
-      "session_string": "1AZWarzcBuyJbJ8DXtJadUV4pYAbcfu1JDR0GIT29DwWRZLOOetegdPzmqSUEGfC1XVrs_d5poblswvuSV5a2q6ECTJpGhvVr2x96ulEunw9PA0xfc8NxbWNJCzjsiV0X0OhqP8bLJmWldfkImW6gLqKISUI1ZM8rqp2dBuBFsZHXba6UoZ2eemhcCIfrEE6jUfM8fy7w65cMAeQJE06KYoF4PQmLs5cN9HIFV9jvKtWV1uMT2YlPRyFHYgk2wdlg2mbtRQPsQMSkGCS06xR2VqoBK8eu7gV0HxcMCryVX9IYcr9hpMpMLX1QJs0aXyGgpB_jUD1TzR_GVeV1O9_XqpCmkxtlhiM=",
-      "phone_number": "+19802862688",
-      "last_used": "2026-03-26T04:32:51.445425",
-      "rate_limited_until": "",
-      "usage_count": 45,
-      "index": 2
+      'api_id': 23594991,
+      'api_hash': '4be96a83e4a7cf10d9a9b78d870dbc31',
+      'session_string': '1AZWarzcBuyJbJ8DXtJadUV4pYAbcfu1JDR0GIT29DwWRZLOOetegdPzmqSUEGfC1XVrs_d5poblswvuSV5a2q6ECTJpGhvVr2x96ulEunw9PA0xfc8NxbWNJCzjsiV0X0OhqP8bLJmWldfkImW6gLqKISUI1ZM8rqp2dBuBFsZHXba6UoZ2eemhcCIfrEE6jUfM8fy7w65cMAeQJE06KYoF4PQmLs5cN9HIFV9jvKtWV1uMT2YlPRyFHYgk2wdlg2mbtRQPsQMSkGCS06xR2VqoBK8eu7gV0HxcMCryVX9IYcr9hpMpMLX1QJs0aXyGgpB_jUD1TzR_GVeV1O9_XqpCmkxtlhiM=',
+      'phone_number': '+19802862688',
+      'last_used': '2026-03-26T04:32:51.445425',
+      'rate_limited_until': '',
+      'usage_count': 45,
+      'index': 2
     }
   ]
 });

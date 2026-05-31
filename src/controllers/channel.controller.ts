@@ -1,11 +1,11 @@
-import { NextFunction, Request, Response } from "express";
-import { ChannelService } from "../services/channel.service";
+import { NextFunction, Request, Response } from 'express';
+import { ChannelService } from '../services/channel.service';
 
 export const scrapeChannel = async (req: Request, res: Response, next: NextFunction) => {
     const channelService = new ChannelService();
     // Validate inputs
     const { channelName, limit, since, triggerWords } = req.body;
-    
+
     // The service handles formatting since it receives IScrapeParams
     const response = await channelService.scrapeChannel({
         channelName,
@@ -22,7 +22,7 @@ export const summarizeMessages = async (req: Request, res: Response, next: NextF
     const { messages, channelName } = req.body;
 
     const response = await channelService.summarizeMessages(messages, channelName);
-    
+
     next({ summary: response });
 };
 

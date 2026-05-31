@@ -67,7 +67,7 @@ export class GptSummarizerService {
         `;
     }
 
-    async analyzeTelegramGroup(messagesData: any, responseLanguage: string = "english", analysisType: 'simple' | 'comprehensive' = 'comprehensive'): Promise<any> {
+    async analyzeTelegramGroup(messagesData: any, responseLanguage: string = 'english', analysisType: 'simple' | 'comprehensive' = 'comprehensive'): Promise<any> {
         try {
             const messages = messagesData.messages || [];
             const topUsers = messagesData.top_active_users || [];
@@ -114,14 +114,14 @@ export class GptSummarizerService {
             }
 
             const response = await this.client.chat.completions.create({
-                model: "gpt-4o",
+                model: 'gpt-4o',
                 messages: [
                     {
-                        role: "system", 
-                        content: "You are an expert analyst specializing in Telegram channel analysis. You can communicate fluently in multiple languages and provide detailed analysis in the requested language."
+                        role: 'system',
+                        content: 'You are an expert analyst specializing in Telegram channel analysis. You can communicate fluently in multiple languages and provide detailed analysis in the requested language.'
                     },
                     {
-                        role: "user", 
+                        role: 'user',
                         content: prompt
                     }
                 ],
@@ -151,11 +151,11 @@ export class GptSummarizerService {
         }
     }
 
-    async summarizeCombinedMessages(allMessages: any[], channelName: string, responseLanguage: string = "english"): Promise<string> {
+    async summarizeCombinedMessages(allMessages: any[], channelName: string, responseLanguage: string = 'english'): Promise<string> {
         try {
             logger.info(`Processing ${allMessages.length} messages for channel ${channelName}`);
-            
-            const messageText = allMessages.slice(0, 300).map((msg: any) => 
+
+            const messageText = allMessages.slice(0, 300).map((msg: any) =>
                 `[${msg.timestamp}] ${msg.sender}: ${msg.text.substring(0, 200)}`
             ).join('\n\n');
 
@@ -174,14 +174,14 @@ export class GptSummarizerService {
             `;
 
             const response = await this.client.chat.completions.create({
-                model: "gpt-4o",
+                model: 'gpt-4o',
                 messages: [
                     {
-                        role: "system", 
-                        content: "You are an expert analyst specializing in comprehensive Telegram channel analysis."
+                        role: 'system',
+                        content: 'You are an expert analyst specializing in comprehensive Telegram channel analysis.'
                     },
                     {
-                        role: "user", 
+                        role: 'user',
                         content: prompt
                     }
                 ],
@@ -189,7 +189,7 @@ export class GptSummarizerService {
                 temperature: 0.7
             });
 
-            return response.choices[0].message.content?.trim() || "No summary generated.";
+            return response.choices[0].message.content?.trim() || 'No summary generated.';
 
         } catch (e: any) {
             logger.error(`Error summarizing combined messages: ${e.message}`);

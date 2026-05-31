@@ -11,6 +11,8 @@ export interface IPollingSnapshot {
   systemPrompt: string;
   lastProcessedMsgId: number;
   messages: IDecoyMessage[];
+  standingObjective: string;
+  pendingNudge: string;
 }
 
 export interface ICreateDecoySessionParams {
@@ -122,6 +124,8 @@ export class DecoySessionRepository {
         status: 1,
         systemPrompt: 1,
         lastProcessedMsgId: 1,
+        standingObjective: 1,
+        pendingNudge: 1,
         messages: { $slice: -50 },
       }
     ).lean<IPollingSnapshot>();
@@ -152,5 +156,21 @@ export class DecoySessionRepository {
       status: { $in: ['active', 'paused'] },
       targetIdentifier: { $regex: `^@?${escaped}$`, $options: 'i' },
     });
+  }
+
+  async setObjective(sessionId: string, objective: string): Promise<void> {
+    await DecoySessionModel.findByIdAndUpdate(sessionId, { standingObjective: objective });
+  }
+
+  async clearObjective(sessionId: string): Promise<void> {
+    await DecoySessionModel.findByIdAndUpdate(sessionId, { standingObjective: '' });
+  }
+
+  async setNudge(sessionId: string, nudge: string): Promise<void> {
+    await DecoySessionModel.findByIdAndUpdate(sessionId, { pendingNudge: nudge });
+  }
+
+  async clearNudge(sessionId: string): Promise<void> {
+    await DecoySessionModel.findByIdAndUpdate(sessionId, { pendingNudge: '' });
   }
 }

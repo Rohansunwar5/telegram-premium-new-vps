@@ -1,7 +1,7 @@
-import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
-import { TelegramAccountRepository } from "../repository/telegramAccount.repository";
-import logger from "../utils/logger";
+import { TelegramClient } from 'telegram';
+import { StringSession } from 'telegram/sessions';
+import { TelegramAccountRepository } from '../repository/telegramAccount.repository';
+import logger from '../utils/logger';
 
 export class TelegramExtractorService {
     private rotationManager: TelegramAccountRepository;
@@ -20,20 +20,20 @@ export class TelegramExtractorService {
             { connectionRetries: 5 }
         );
 
-        (client as any).setLogLevel("none");
+        (client as any).setLogLevel('none');
         await client.connect();
 
         try {
             const channel = await client.getEntity(channelUsername);
             const messagesList: any[] = [];
-            
+
             let firstMessageTimestamp: Date | null = null;
             let lastMessageTimestamp: Date | null = null;
-            
+
             const detailedUsers: Record<string, any> = {};
 
             const iterator = client.iterMessages(channel, { limit });
-            
+
             for await (const msg of iterator) {
                 if (msg.text) {
                     const msgDate = new Date(msg.date * 1000);
@@ -42,7 +42,7 @@ export class TelegramExtractorService {
                     }
                     lastMessageTimestamp = msgDate;
 
-                    let senderName = "Unknown";
+                    let senderName = 'Unknown';
                     let username = null;
 
                     const sender = await msg.getSender();
@@ -58,7 +58,7 @@ export class TelegramExtractorService {
                         }
                     }
 
-                    const userId = msg.senderId ? msg.senderId.toString() : "0";
+                    const userId = msg.senderId ? msg.senderId.toString() : '0';
 
                     if (!detailedUsers[senderName]) {
                         detailedUsers[senderName] = {
@@ -89,7 +89,7 @@ export class TelegramExtractorService {
             }
 
             const sortedUsers = Object.values(detailedUsers).sort((a, b) => b.message_count - a.message_count);
-            
+
             const top50Users = sortedUsers.slice(0, 50).map((userInfo, index) => ({
                 rank: index + 1,
                 display_name: userInfo.display_name,
@@ -136,23 +136,23 @@ export class TelegramExtractorService {
             { connectionRetries: 5 }
         );
 
-        (client as any).setLogLevel("none");
+        (client as any).setLogLevel('none');
         await client.connect();
 
         try {
             const channel = await client.getEntity(channelUsername);
             const messagesList: any[] = [];
-            
+
             let firstMessageTimestamp: Date | null = null;
             let lastMessageTimestamp: Date | null = null;
-            
+
             const detailedUsers: Record<string, any> = {};
 
             const iterator = client.iterMessages(channel, { limit });
-            
+
             for await (const msg of iterator) {
                 const msgDate = new Date(msg.date * 1000);
-                
+
                 if (msgDate <= since) {
                     logger.info(`Reached messages older than ${since}, stopping`);
                     break;
@@ -164,7 +164,7 @@ export class TelegramExtractorService {
                     }
                     lastMessageTimestamp = msgDate;
 
-                    let senderName = "Unknown";
+                    let senderName = 'Unknown';
                     let username = null;
 
                     const sender = await msg.getSender();
@@ -180,7 +180,7 @@ export class TelegramExtractorService {
                         }
                     }
 
-                    const userId = msg.senderId ? msg.senderId.toString() : "0";
+                    const userId = msg.senderId ? msg.senderId.toString() : '0';
 
                     if (!detailedUsers[senderName]) {
                         detailedUsers[senderName] = {
@@ -197,7 +197,7 @@ export class TelegramExtractorService {
                     detailedUsers[senderName].last_message_time = msgDate;
 
                     messagesList.push({
-                        timestamp: msgDate.toISOString().replace('T', ' ').split('.')[0], 
+                        timestamp: msgDate.toISOString().replace('T', ' ').split('.')[0],
                         timestamp_raw: msgDate.toISOString(),
                         text: msg.text,
                         message_id: msg.id,
@@ -213,7 +213,7 @@ export class TelegramExtractorService {
             messagesList.sort((a, b) => new Date(a.timestamp_raw).getTime() - new Date(b.timestamp_raw).getTime());
 
             const sortedUsers = Object.values(detailedUsers).sort((a, b) => b.message_count - a.message_count);
-            
+
             const top50Users = sortedUsers.slice(0, 50).map((userInfo, index) => ({
                 rank: index + 1,
                 display_name: userInfo.display_name,
@@ -279,12 +279,12 @@ export class TelegramExtractorService {
                     retryCount++;
                     await new Promise(res => setTimeout(res, 2000));
                 } else {
-                    if (errorMsg.includes("not found") || errorMsg.toLowerCase().includes("username")) {
+                    if (errorMsg.includes('not found') || errorMsg.toLowerCase().includes('username')) {
                         logger.error(`Username not found: ${channelUsername}`);
                         throw new Error(`Telegram channel '${channelUsername}' not found.`);
                     }
 
-                    if (errorMsg.includes("All remaining accounts")) {
+                    if (errorMsg.includes('All remaining accounts')) {
                         throw e;
                     }
 
@@ -294,7 +294,7 @@ export class TelegramExtractorService {
                     } else {
                         logger.error(`Error getting account: ${errorMsg}`);
                     }
-                    
+
                     retryCount++;
                     if (retryCount < maxRetries) {
                         await new Promise(res => setTimeout(res, 2000));
@@ -334,12 +334,12 @@ export class TelegramExtractorService {
                     retryCount++;
                     await new Promise(res => setTimeout(res, 2000));
                 } else {
-                    if (errorMsg.includes("not found") || errorMsg.toLowerCase().includes("username")) {
+                    if (errorMsg.includes('not found') || errorMsg.toLowerCase().includes('username')) {
                         logger.error(`Username not found: ${channelUsername}`);
                         throw new Error(`Telegram channel '${channelUsername}' not found.`);
                     }
 
-                    if (errorMsg.includes("All remaining accounts")) {
+                    if (errorMsg.includes('All remaining accounts')) {
                         throw e;
                     }
 
@@ -349,7 +349,7 @@ export class TelegramExtractorService {
                     } else {
                         logger.error(`Error getting account: ${errorMsg}`);
                     }
-                    
+
                     retryCount++;
                     if (retryCount < maxRetries) {
                         await new Promise(res => setTimeout(res, 2000));

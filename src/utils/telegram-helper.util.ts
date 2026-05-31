@@ -9,7 +9,7 @@ export function generateMessageStatistics(messages: any[], triggerWords: string[
     for (const word of triggerWords) {
         triggerFrequency[word] = { count: 0, message_ids: [] };
     }
-    
+
     const frequencyHourly: number[] = Array.from({ length: 24 }, () => 0);
     const frequencyWeekday: Record<string, number> = {};
     const frequencyUser: Record<string, number> = {};
@@ -21,15 +21,15 @@ export function generateMessageStatistics(messages: any[], triggerWords: string[
     for (const message of messages) {
         try {
             const time = new Date(message.timestamp_raw || message.timestamp);
-            
+
             if (!isNaN(time.getTime())) {
                 frequencyHourly[time.getHours()] += 1;
                 const dayName = days[time.getDay()];
                 frequencyWeekday[dayName] = (frequencyWeekday[dayName] || 0) + 1;
             }
 
-            const sender = message.username || message.sender || "null";
-            const text = message.text || message.content || "";
+            const sender = message.username || message.sender || 'null';
+            const text = message.text || message.content || '';
 
             const messagePart = {
                 sender: sender,

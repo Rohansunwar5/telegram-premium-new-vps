@@ -1,4 +1,4 @@
-import mongoose, { Schema } from "mongoose";
+import mongoose, { Schema } from 'mongoose';
 
 const bookmarkSchema = new mongoose.Schema(
     {
@@ -20,7 +20,7 @@ const bookmarkSchema = new mongoose.Schema(
             required: true,
         },
         alertDays: {
-            type: [String], 
+            type: [String],
             default: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
         },
         triggerWords: {

@@ -19,7 +19,7 @@ export function normalizeLookupValue(value: string): string {
  * Checks if a bot message text corresponds STRICTLY to the query requested by the user.
  * Ensures that username and title matches are exact to prevent false positives from partial overlaps.
  * Crucially handles 'no results' outputs from the bot so it falls-back securely.
- * This runs natively at the server level (not within evaluate()). 
+ * This runs natively at the server level (not within evaluate()).
  * @param text The raw message text parsed from the DOM.
  * @param normalizedQuery The formatted lookup string we are comparing it with.
  * @param queryIsNumeric Whether the search was strictly an ID query.
@@ -29,7 +29,7 @@ export function messageMatchesQuery(text: string, normalizedQuery: string, query
   if (!normalizedQuery) return true;
 
   const normalizedText = String(text || '').toLowerCase();
-  
+
   // IMMEDIATELY ABORT validation if bot returned "there are no results for this search"
   if (normalizedText.includes('there are no results for this search') || normalizedText.includes('no results found')) {
     return false;

@@ -7,7 +7,7 @@ const messageSchema = new mongoose.Schema(
   {
     role: {
       type: String,
-      enum: ['ai', 'target', 'manual'],
+      enum: ['ai', 'target', 'manual', 'directive'],
       required: true,
     },
     content: {
@@ -75,6 +75,16 @@ const decoySessionSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // Operator steering — persists across turns until changed/cleared.
+    standingObjective: {
+      type: String,
+      default: '',
+    },
+    // Operator steering — consumed by the next AI reply, then cleared.
+    pendingNudge: {
+      type: String,
+      default: '',
+    },
     status: {
       type: String,
       enum: ['active', 'paused', 'stopped'],
@@ -101,7 +111,7 @@ decoySessionSchema.index({ userId: 1, status: 1 });
 decoySessionSchema.index({ status: 1 });
 
 export interface IDecoyMessage {
-  role: 'ai' | 'target' | 'manual';
+  role: 'ai' | 'target' | 'manual' | 'directive';
   content: string;
   mediaUrl?: string | null;
   mediaKind?: MediaKind | null;
@@ -119,6 +129,8 @@ export interface IDecoySession extends mongoose.Document {
   lastProcessedMsgId: number;
   systemPrompt: string;
   targetContext: string;
+  standingObjective: string;
+  pendingNudge: string;
   status: 'active' | 'paused' | 'stopped';
   messages: IDecoyMessage[];
   lastPolledAt: Date | null;

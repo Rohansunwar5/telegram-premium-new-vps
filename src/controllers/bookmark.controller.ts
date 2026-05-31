@@ -1,9 +1,9 @@
-import { NextFunction, Request, Response } from "express";
-import { BookmarkRepository } from "../repository/bookmark.repository";
-import { S3Service } from "../services/s3.service";
-import { ChannelService } from "../services/channel.service";
-import BookmarkService from "../services/bookmark.service";
-import { UserRepository } from "../repository/user.repository";
+import { NextFunction, Request, Response } from 'express';
+import { BookmarkRepository } from '../repository/bookmark.repository';
+import { S3Service } from '../services/s3.service';
+import { ChannelService } from '../services/channel.service';
+import BookmarkService from '../services/bookmark.service';
+import { UserRepository } from '../repository/user.repository';
 
 const bookmarkRepository = new BookmarkRepository();
 const s3Service = new S3Service();
@@ -110,7 +110,6 @@ export const getBookmarkStatus = async (req: Request, res: Response, next: NextF
 };
 
 
-
 export const manualScrape = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;
   const { bookmarkId } = req.params;
@@ -154,7 +153,7 @@ export const getDashboardStats = async (req: Request, res: Response, next: NextF
   const stats = await bookmarkService.getBookmarkDashboardStats(bookmarkId, userId);
 
   next(stats);
-}
+};
 
 export const getAllUserDashboardStats = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;

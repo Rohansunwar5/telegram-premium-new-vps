@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
+import { IDecoyMessage } from '../models/decoySession.model';
 import { DecoySessionRepository } from '../repository/decoySession.repository';
 import { DecoyAccountRepository } from '../repository/decoyAccount.repository';
 import { BadRequestError } from '../errors/bad-request.error';
@@ -215,6 +216,66 @@ export const resetUnseen = async (req: Request, res: Response, next: NextFunctio
 
   await sessionRepo.resetUnseenCount(id);
   emitToSession(id, 'decoy:unseen_reset', { sessionId: id });
-  
+
   next({ data: null, statusCode: 200, msg: 'Unseen count reset' });
+};
+
+export const setObjective = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { id } = req.params;
+  const { objective } = req.body;
+
+  const session = await sessionRepo.findById(id);
+  if (!session) throw new NotFoundError('Session not found');
+  if (session.userId.toString() !== userId.toString()) throw new ForbiddenError('Access denied');
+  if (session.status === 'stopped') throw new BadRequestError('Cannot steer a stopped session');
+
+  const text = (objective as string).trim();
+  await sessionRepo.setObjective(id, text);
+
+  const entry: IDecoyMessage = { role: 'directive', content: `Objective set: ${text}`, timestamp: new Date() };
+  await sessionRepo.appendMessages(id, [entry]);
+  emitToSession(id, 'decoy:message', entry);
+  emitToSession(id, 'decoy:objective', { sessionId: id, objective: text });
+
+  next({ objective: text, statusCode: 200, msg: 'Objective set' });
+};
+
+export const clearObjective = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { id } = req.params;
+
+  const session = await sessionRepo.findById(id);
+  if (!session) throw new NotFoundError('Session not found');
+  if (session.userId.toString() !== userId.toString()) throw new ForbiddenError('Access denied');
+  if (session.status === 'stopped') throw new BadRequestError('Cannot steer a stopped session');
+
+  await sessionRepo.clearObjective(id);
+
+  const entry: IDecoyMessage = { role: 'directive', content: 'Objective cleared', timestamp: new Date() };
+  await sessionRepo.appendMessages(id, [entry]);
+  emitToSession(id, 'decoy:message', entry);
+  emitToSession(id, 'decoy:objective', { sessionId: id, objective: '' });
+
+  next({ objective: '', statusCode: 200, msg: 'Objective cleared' });
+};
+
+export const sendNudge = async (req: Request, res: Response, next: NextFunction) => {
+  const { _id: userId } = req.user;
+  const { id } = req.params;
+  const { nudge } = req.body;
+
+  const session = await sessionRepo.findById(id);
+  if (!session) throw new NotFoundError('Session not found');
+  if (session.userId.toString() !== userId.toString()) throw new ForbiddenError('Access denied');
+  if (session.status === 'stopped') throw new BadRequestError('Cannot steer a stopped session');
+
+  const text = (nudge as string).trim();
+  await sessionRepo.setNudge(id, text);
+
+  const entry: IDecoyMessage = { role: 'directive', content: `Nudge: ${text}`, timestamp: new Date() };
+  await sessionRepo.appendMessages(id, [entry]);
+  emitToSession(id, 'decoy:message', entry);
+
+  next({ nudge: text, statusCode: 200, msg: 'Nudge queued' });
 };

@@ -4,12 +4,12 @@ import { UserRepository } from '../repository/user.repository';
 class PaymentService {
   constructor(private readonly _userRepository: UserRepository) {}
 
-  async verifyAndAddCredits(  userId: string, 
-    orderId: string, 
-    paymentId: string, 
+  async verifyAndAddCredits( userId: string,
+    orderId: string,
+    paymentId: string,
     signature: string,
     planType: string ) {
-    
+
       const generatedSignature = crypto
       .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
       .update(`${orderId}|${paymentId}`)
@@ -23,7 +23,7 @@ class PaymentService {
 
     // Update user's credits
     const updatedUser = await this._userRepository.updateUserCredits(userId, creditsToAdd);
-    
+
     if (!updatedUser) {
       return { success: false };
     }
@@ -35,4 +35,4 @@ class PaymentService {
   }
 }
 
-export default new PaymentService(new UserRepository()); 
+export default new PaymentService(new UserRepository());

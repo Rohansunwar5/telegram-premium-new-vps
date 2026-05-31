@@ -1,8 +1,8 @@
-import mongoose from "mongoose";
-import bookmarkModel, { IBookmark } from "../models/bookmark.model";
-import scrapeDataModel, { IScrapeData } from "../models/scrapeData.model";
-import logger from "../utils/logger";
-import { NotFoundError } from "../errors/not-found.error";
+import mongoose from 'mongoose';
+import bookmarkModel, { IBookmark } from '../models/bookmark.model';
+import scrapeDataModel, { IScrapeData } from '../models/scrapeData.model';
+import logger from '../utils/logger';
+import { NotFoundError } from '../errors/not-found.error';
 
 export interface ICreateBookmarkParams {
     userId: string;
@@ -70,7 +70,7 @@ export class BookmarkRepository {
     async createBookmark(params: ICreateBookmarkParams): Promise <IBookmark> {
         const { userId, channelName, channelId, alertTime, alertDays, triggerWords } = params;
         const s3Prefix = `bookmarks/${userId}/${channelId}`;
-        
+
         return this._bookmarkModel.create({
         userId,
         channelName,
@@ -107,11 +107,11 @@ export class BookmarkRepository {
             isActive: true,
             triggerWords: { $exists: true, $ne: [], $not: { $size: 0 } }
         };
-        
+
         if (userId) {
             query.userId = userId;
         }
-        
+
         return this._bookmarkModel.find(query);
     }
 
@@ -160,11 +160,11 @@ export class BookmarkRepository {
 
                 processedParams.analysis = {
                     frequencyHourly: params.analysis.frequencyHourly || [], // Updated field name
-                    frequencyUser: params.analysis.frequencyUser instanceof Map 
-                        ? params.analysis.frequencyUser 
+                    frequencyUser: params.analysis.frequencyUser instanceof Map
+                        ? params.analysis.frequencyUser
                         : new Map(Object.entries(params.analysis.frequencyUser || {})),
-                    frequencyWeekday: params.analysis.frequencyWeekday instanceof Map 
-                        ? params.analysis.frequencyWeekday 
+                    frequencyWeekday: params.analysis.frequencyWeekday instanceof Map
+                        ? params.analysis.frequencyWeekday
                         : new Map(Object.entries(params.analysis.frequencyWeekday || {})),
                     links: params.analysis.links || [],
                     triggerFrequency: params.analysis.triggerFrequency instanceof Map // Updated field name
@@ -189,7 +189,7 @@ export class BookmarkRepository {
             }
 
             const scrapeData = await this._scrapeDataModel.create(processedParams);
-            
+
             logger.info(`✅ Scrape data created successfully with ID: ${scrapeData._id}`);
             logger.info(`Final saved data:`, {
                 analysisFrequencyHourly: scrapeData.analysis?.frequencyHourly?.length || 0,
@@ -200,7 +200,7 @@ export class BookmarkRepository {
             });
 
             return scrapeData;
-            
+
         } catch (error) {
             logger.error(`Error creating scrape data:`, error);
             logger.error(`Params that failed:`, params);
@@ -219,8 +219,8 @@ export class BookmarkRepository {
     async markScrapeDataAsProcessed(scrapeDataIds: string[]): Promise<void> {
         await this._scrapeDataModel.updateMany(
         { _id: { $in: scrapeDataIds } },
-        { 
-            $set: { 
+        {
+            $set: {
             isProcessed: true,
             processedAt: new Date()
             }
@@ -238,10 +238,10 @@ export class BookmarkRepository {
 
     async getLatestScrapeData(bookmarkId: string): Promise<IScrapeData | null> {
         try {
-            return await this._scrapeDataModel.findOne({ 
-                bookmarkId 
+            return await this._scrapeDataModel.findOne({
+                bookmarkId
             })
-            .sort({ firstMessageTimestamp: -1 })  // firstMessageTimestamp is the NEWEST message
+            .sort({ firstMessageTimestamp: -1 }) // firstMessageTimestamp is the NEWEST message
             .exec();
         } catch (error) {
             logger.error('Error getting latest scrape data:', error);
@@ -252,14 +252,14 @@ export class BookmarkRepository {
     // Get the timestamp of the NEWEST message we have
     async getLatestMessageTimestamp(bookmarkId: string): Promise<Date | null> {
         try {
-            const latestScrape = await this._scrapeDataModel.findOne({ 
-                bookmarkId 
+            const latestScrape = await this._scrapeDataModel.findOne({
+                bookmarkId
             })
-            .sort({ firstMessageTimestamp: -1 })  // Sort by NEWEST message
+            .sort({ firstMessageTimestamp: -1 }) // Sort by NEWEST message
             .select('firstMessageTimestamp')
             .exec();
-            
-            return latestScrape?.firstMessageTimestamp || null;  // Return the NEWEST message time
+
+            return latestScrape?.firstMessageTimestamp || null; // Return the NEWEST message time
         } catch (error) {
             logger.error('Error getting latest message timestamp:', error);
             return null;
@@ -304,8 +304,8 @@ export class BookmarkRepository {
                         },
                         avgMessagesPerScrape: { $avg: '$messageCount' },
                         lastScrapeAt: { $max: '$scrapedAt' },
-                        oldestMessageInDB: { $min: '$lastMessageTimestamp' },  
-                        newestMessageInDB: { $max: '$firstMessageTimestamp' } 
+                        oldestMessageInDB: { $min: '$lastMessageTimestamp' },
+                        newestMessageInDB: { $max: '$firstMessageTimestamp' }
                     }
                 }
             ]);
@@ -332,7 +332,7 @@ export class BookmarkRepository {
             .sort({ scrapedAt: -1 })
             .limit(3)
             .exec();
-        
+
         console.log('\n📊 Timestamp Debug for Recent Scrapes:');
         scrapes.forEach((scrape, index) => {
             console.log(`\nScrape #${index + 1} (${scrape.scrapedAt}):`);
@@ -345,11 +345,11 @@ export class BookmarkRepository {
 
     async getBookmarkScrapeData(params: IGetScrapeDataParams) {
     const { bookmarkId, days, limit, page = 1 } = params;
-    
-    
-    let query: any = { bookmarkId: new mongoose.Types.ObjectId(bookmarkId) };
-    
-    
+
+
+    const query: any = { bookmarkId: new mongoose.Types.ObjectId(bookmarkId) };
+
+
     if (days && days > 0) {
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - days);
@@ -357,12 +357,12 @@ export class BookmarkRepository {
     }
 
 
-    let pipeline: any[] = [
+    const pipeline: any[] = [
         { $match: query },
-        { $sort: { scrapedAt: -1 } } 
+        { $sort: { scrapedAt: -1 } }
     ];
 
-    
+
     if (limit && limit > 0) {
         const skip = (page - 1) * limit;
         pipeline.push(
@@ -419,7 +419,7 @@ export class BookmarkRepository {
         }
     };
 
-    
+
 }
 
     async getScrapeDataByTimeWindow(bookmarkId: string, fromTime: Date, toTime: Date): Promise<IScrapeData[]> {

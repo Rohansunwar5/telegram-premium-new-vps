@@ -173,14 +173,14 @@ export class BkpschAutomation {
         await page.waitForFunction(
           () =>
             Array.from(
-              document.querySelectorAll("button, .btn, [role='button'], a"),
+              document.querySelectorAll('button, .btn, [role=\'button\'], a'),
             ).some((el) =>
               el.textContent?.toLowerCase().includes('click here to continue'),
             ),
           { timeout: 10000 },
         );
         const continueBtn = page
-          .locator("button, .btn, [role='button'], a")
+          .locator('button, .btn, [role=\'button\'], a')
           .filter({ hasText: /click here to continue/i })
           .last();
         await continueBtn.click();
@@ -230,7 +230,7 @@ export class BkpschAutomation {
       // Handle raw buffer writes locally over downloads triggering
       if (!csvData) {
         try {
-          const csvLink = await page.$("a[href*='.csv'], a[download]");
+          const csvLink = await page.$('a[href*=\'.csv\'], a[download]');
           if (csvLink) {
             const [download] = await Promise.all([
               page.waitForEvent('download', { timeout: 8000 }),
@@ -424,14 +424,14 @@ export class BkpschAutomation {
         await page.waitForFunction(
           () =>
             Array.from(
-              document.querySelectorAll("button, .btn, [role='button'], a"),
+              document.querySelectorAll('button, .btn, [role=\'button\'], a'),
             ).some((el) =>
               el.textContent?.toLowerCase().includes('click here to continue'),
             ),
           { timeout: 10000 },
         );
         const continueBtn = page
-          .locator("button, .btn, [role='button'], a")
+          .locator('button, .btn, [role=\'button\'], a')
           .filter({ hasText: /click here to continue/i })
           .last();
         await continueBtn.click();
@@ -478,7 +478,7 @@ export class BkpschAutomation {
 
       if (!csvData) {
         try {
-          const csvLink = await page.$("a[href*='.csv'], a[download]");
+          const csvLink = await page.$('a[href*=\'.csv\'], a[download]');
           if (csvLink) {
             const [download] = await Promise.all([
               page.waitForEvent('download', { timeout: 8000 }),

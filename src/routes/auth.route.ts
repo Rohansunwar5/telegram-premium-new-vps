@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../utils/asynchandler';
 import {
-  genericLogin, profile, signup, 
+  genericLogin, profile, signup,
 } from '../controllers/auth.controller';
 import { loginValidator,signupValidator} from '../middlewares/validators/auth.validator';
 import isLoggedIn from '../middlewares/isLoggedIn.middleware';

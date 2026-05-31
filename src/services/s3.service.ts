@@ -10,7 +10,7 @@ export class S3Service {
 
   constructor() {
     const bucketName = config.S3_BUCKET_NAME || 'telegram-scraper-bucket-73640';
-    
+
     logger.info('S3 Service initializing with:', {
       accessKeyId: config.AWS_ACCESS_KEY_ID ? '✅ Set' : '❌ Not set',
       secretAccessKey: config.AWS_SECRET_ACCESS_KEY ? '✅ Set' : '❌ Not set',
@@ -31,7 +31,7 @@ export class S3Service {
       secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
       region: config.AWS_REGION || 'us-east-1'
     });
-    
+
     this.bucketName = bucketName;
     logger.info(`✅ S3 Service initialized with bucket: ${this.bucketName}`);
   }
@@ -53,7 +53,7 @@ export class S3Service {
 
       const result = await this.s3.upload(params).promise();
       logger.info(`✅ S3 upload successful: ${result.Location}`);
-      
+
       return result.Location;
     } catch (error: any) {
       logger.error('❌ Error uploading to S3:', {
@@ -76,7 +76,7 @@ export class S3Service {
 
       const result = await this.s3.getObject(params).promise();
       const data = result.Body?.toString('utf-8');
-      
+
       if (!data) {
         throw new Error('No data found in S3 object');
       }

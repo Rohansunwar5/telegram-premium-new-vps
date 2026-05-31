@@ -16,14 +16,14 @@ export interface LogDataJSON {
 export const getLogDataFromReqObject = (req: Request): string => {
   try {
     if (!req) return '(request object data Not Found)';
-    
+
     const ip = req.headers?.['x-forwarded-for'] || req.ip || req.socket['remoteAddress'];
     const userId = req.user?._id;
     const path = req.path;
     const params = JSON.stringify(req.params);
     const query = JSON.stringify(req.query);
     const body = { ...req.body };
-    
+
     // Remove sensitive data from logs
     delete body?.password;
     delete body?.secretKey;
@@ -49,7 +49,7 @@ export const getLogDataInJSONFromReqObject = (req: Request): LogDataJSON => {
     const query = JSON.stringify(req.query);
     const method = JSON.stringify(req.method);
     const body = { ...req.body };
-    
+
     // Remove sensitive data from logs
     delete body?.password;
     delete body?.confirmPassword;

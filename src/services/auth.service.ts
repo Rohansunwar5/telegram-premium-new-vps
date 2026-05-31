@@ -72,7 +72,7 @@ class AuthService {
     const user = await this._userRepository.onBoardUser({
       firstName, lastName, email, password: hashedPassword
     });
-    
+
     if (!user) throw new InternalServerError('Failed to Onboard user');
 
     // generate JWT Token

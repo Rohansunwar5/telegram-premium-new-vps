@@ -9,8 +9,8 @@ import { generateMessageStatistics } from '../utils/telegram-helper.util';
 interface IScrapeParams {
     channelName: string;
     limit?: number | null;
-    since?: Date | string;  
-    triggerWords?: string[]; 
+    since?: Date | string;
+    triggerWords?: string[];
 }
 
 export class ChannelService {
@@ -19,14 +19,14 @@ export class ChannelService {
     private accountRepository: TelegramAccountRepository;
 
     private supportedLanguages: Record<string, { english: string; native: string }> = {
-        "english": { "english": "English", "native": "English" },
-        "hindi": { "english": "Hindi", "native": "हिन्दी" },
-        "bengali": { "english": "Bengali", "native": "বাংলা" },
-        "telugu": { "english": "Telugu", "native": "తెలుగు" },
-        "marathi": { "english": "Marathi", "native": "मराठी" },
-        "tamil": { "english": "Tamil", "native": "தமிழ்" },
-        "gujarati": { "english": "Gujarati", "native": "ગુજરાતી" },
-        "urdu": { "english": "Urdu", "native": "اردو" }
+        'english': { 'english': 'English', 'native': 'English' },
+        'hindi': { 'english': 'Hindi', 'native': 'हिन्दी' },
+        'bengali': { 'english': 'Bengali', 'native': 'বাংলা' },
+        'telugu': { 'english': 'Telugu', 'native': 'తెలుగు' },
+        'marathi': { 'english': 'Marathi', 'native': 'मराठी' },
+        'tamil': { 'english': 'Tamil', 'native': 'தமிழ்' },
+        'gujarati': { 'english': 'Gujarati', 'native': 'ગુજરાતી' },
+        'urdu': { 'english': 'Urdu', 'native': 'اردو' }
     };
 
     constructor() {
@@ -44,8 +44,8 @@ export class ChannelService {
                 scrapeParams = params;
             }
 
-            const triggerWords = scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0 
-                ? scrapeParams.triggerWords 
+            const triggerWords = scrapeParams.triggerWords && scrapeParams.triggerWords.length > 0
+                ? scrapeParams.triggerWords
                 : ['important', 'urgent', 'announcement', 'update'];
 
             logger.info(`📡 Scraping ${scrapeParams.channelName}`, {
@@ -63,7 +63,7 @@ export class ChannelService {
             }
 
             const messages = scrapeResult.messages || [];
-            
+
             const sortedMessages = messages.sort((a: any, b: any) => {
                 const timeA = new Date(a.timestamp_raw || a.timestamp).getTime();
                 const timeB = new Date(b.timestamp_raw || b.timestamp).getTime();
@@ -109,7 +109,7 @@ export class ChannelService {
                 },
                 usedTriggerWords: triggerWords
             };
-            
+
         } catch (error: any) {
             logger.error(`Error scraping channel: ${error.message}`);
             throw new InternalServerError(`Failed to scrape channel: ${error.message}`);
@@ -123,10 +123,10 @@ export class ChannelService {
             }
 
             logger.info(`📝 Summarizing ${messages.length} messages for ${channelName}`);
-            
+
             const summary = await this.summarizerService.summarizeCombinedMessages(messages, channelName, 'english');
             return summary || 'No summary available';
-            
+
         } catch (error: any) {
             logger.error(`Error summarizing messages: ${error.message}`);
             throw new InternalServerError(`Summarization failed: ${error.message}`);
@@ -198,7 +198,7 @@ export class ChannelService {
             await this.accountRepository.resetRateLimits();
             return {
                 success: true,
-                message: "Rate limits reset for all accounts"
+                message: 'Rate limits reset for all accounts'
             };
         } catch (error: any) {
             logger.error(`Error resetting account limits: ${error.message}`);

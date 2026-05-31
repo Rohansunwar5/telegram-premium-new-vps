@@ -24,7 +24,7 @@ export class UserRepository {
     return this._model.create({ firstName, lastName, email, password });
   }
 
- 
+
  async updateUserCredits(userId: string, creditDelta: number) {
     return this._model.findByIdAndUpdate(
         userId,
@@ -50,7 +50,7 @@ export class UserRepository {
 
     return this._model.findByIdAndUpdate(_id, { firstName, lastName, isdCode, phoneNumber, bio, location, company, socials }, { new: true });
   }
-  
+
   async verifyUserId(userId: string) {
     return this._model.findByIdAndUpdate(userId, {
       verified: true
