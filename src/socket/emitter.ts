@@ -51,15 +51,36 @@ export async function initSocketEmitter(): Promise<void> {
 
 /**
  * Emit an event into a decoy session room.
- * All workers subscribed to that room via the Redis Adapter will forward it
- * to the browser clients watching that session.
+ *
+ * Two delivery paths (belt-and-suspenders):
+ *  1. Direct Socket.IO server emit — if the `io` instance lives in this
+ *     process (dev mode, or same-process setups), emit straight to the room.
+ *     This is the most reliable path because it skips Redis Pub/Sub entirely.
+ *  2. Redis emitter — publishes into the Redis channel so that workers in a
+ *     production cluster also receive the broadcast via the Redis adapter.
  */
 export function emitToSession(sessionId: string, event: string, payload: unknown): void {
-  if (!emitter) {
-    logger.warn('[Socket Emitter] emitToSession called before initialisation');
-    return;
+  let emittedDirectly = false;
+
+  // 1. Direct path — emit through the Socket.IO server when available
+  try {
+    const { io } = require('./index');          // dynamic require avoids circular dep at load time
+    if (io) {
+      io.to(`session:${sessionId}`).emit(event, payload);
+      emittedDirectly = true;
+    }
+  } catch {
+    // io not available in this process (e.g. production master with no HTTP server)
   }
-  emitter.to(`session:${sessionId}`).emit(event, payload);
+
+  // 2. Redis emitter path — cross-process fan-out for clustered workers
+  if (emitter) {
+    emitter.to(`session:${sessionId}`).emit(event, payload);
+  }
+
+  if (!emittedDirectly && !emitter) {
+    logger.warn('[Socket Emitter] emitToSession: no IO server and no Redis emitter available');
+  }
 }
 
 /**
