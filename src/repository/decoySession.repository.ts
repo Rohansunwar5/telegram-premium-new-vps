@@ -13,6 +13,7 @@ export interface IPollingSnapshot {
   messages: IDecoyMessage[];
   standingObjective: string;
   pendingNudge: string;
+  unseenCount?: number;
 }
 
 export interface ICreateDecoySessionParams {
@@ -126,6 +127,7 @@ export class DecoySessionRepository {
         lastProcessedMsgId: 1,
         standingObjective: 1,
         pendingNudge: 1,
+        unseenCount: 1,
         messages: { $slice: -50 },
       }
     ).lean<IPollingSnapshot>();

@@ -93,6 +93,9 @@ function onConnection(socket: Socket): void {
 
   logger.info(`[Socket.IO] Connected userId=${_id} socketId=${socket.id} pid=${process.pid}`);
 
+  // Global user room — for cross-session notifications (badge counts, etc.)
+  socket.join(`user:${_id}`);
+
   socket.on('join:session', ({ sessionId }: { sessionId?: string }) => {
     if (!sessionId || typeof sessionId !== 'string') return;
     const room = `session:${sessionId}`;

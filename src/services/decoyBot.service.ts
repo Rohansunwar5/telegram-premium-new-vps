@@ -6,7 +6,7 @@ import { DecoySessionRepository } from '../repository/decoySession.repository';
 import { DecoyAccountRepository } from '../repository/decoyAccount.repository';
 import { DecoyAIService } from './decoyAI.service';
 import { uploadBufferToS3 } from '../utils/s3.util';
-import { emitToSession } from '../socket/emitter';
+import { emitToSession, emitToUser } from '../socket/emitter';
 import config from '../config';
 import logger from '../utils/logger';
 
@@ -92,6 +92,7 @@ export class DecoyBotService {
   private consecutiveErrors = new Map<string, number>();
   private pollingActive = new Map<string, boolean>();
   private sessionAccounts = new Map<string, string>();
+  private sessionUsers = new Map<string, string>();
   // Shared TelegramClient pool keyed by decoy accountId. One MTProto connection
   // is multiplexed across every session using the same decoy account, so the
   // same StringSession is never opened twice (which would cause AUTH_KEY_DUPLICATED).
@@ -152,6 +153,7 @@ export class DecoyBotService {
       const client = await this._acquireClient(account);
       this.clients.set(sessionId, client);
       this.sessionAccounts.set(sessionId, account._id.toString());
+      this.sessionUsers.set(sessionId, session.userId.toString());
 
       const entity = await client.getEntity(session.targetIdentifier);
       this.targetEntities.set(sessionId, entity);
@@ -250,6 +252,7 @@ export class DecoyBotService {
 
     const accountId = this.sessionAccounts.get(sessionId);
     this.sessionAccounts.delete(sessionId);
+    this.sessionUsers.delete(sessionId);
 
     if (accountId) {
       await this._releaseClient(accountId);
@@ -456,6 +459,16 @@ export class DecoyBotService {
       await this.sessionRepo.incrementUnseenCount(sessionId, targetMessages.length);
       for (const msg of targetMessages) {
         emitToSession(sessionId, 'decoy:message', msg);
+      }
+
+      const userId = this.sessionUsers.get(sessionId);
+      if (userId) {
+        emitToUser(userId, 'decoy:notification', {
+          sessionId,
+          unseenCount: (snapshot.unseenCount ?? 0) + targetMessages.length,
+          lastMessage: targetMessages[targetMessages.length - 1]?.content?.slice(0, 100) || '',
+          timestamp: Date.now(),
+        });
       }
 
       // Mark as read with a natural delay (3–20 s)

@@ -84,6 +84,33 @@ export function emitToSession(sessionId: string, event: string, payload: unknown
 }
 
 /**
+ * Emit an event to all sockets watching a specific user room.
+ */
+export function emitToUser(userId: string, event: string, payload: unknown): void {
+  let emittedDirectly = false;
+
+  // 1. Direct path
+  try {
+    const { io } = require('./index');
+    if (io) {
+      io.to(`user:${userId}`).emit(event, payload);
+      emittedDirectly = true;
+    }
+  } catch {
+    // io not available in this process
+  }
+
+  // 2. Redis emitter path
+  if (emitter) {
+    emitter.to(`user:${userId}`).emit(event, payload);
+  }
+
+  if (!emittedDirectly && !emitter) {
+    logger.warn('[Socket Emitter] emitToUser: no IO server and no Redis emitter available');
+  }
+}
+
+/**
  * Gracefully close the emitter's Redis client.
  * Call this during master process shutdown.
  */
