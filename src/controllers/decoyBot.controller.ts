@@ -8,10 +8,12 @@ import { ForbiddenError } from '../errors/forbidden.error';
 import { getDecoyBotService } from '../services/decoyBot.singleton';
 import { buildSystemPrompt } from '../services/decoyAI.service';
 import { emitToSession } from '../socket/emitter';
+import { getNotificationService } from '../services/notification.service';
 import logger from '../utils/logger';
 
 const sessionRepo = new DecoySessionRepository();
 const accountRepo = new DecoyAccountRepository();
+const notificationService = getNotificationService();
 
 // Soft-warning thresholds for the account-picker dropdown.
 // 'high' = visible caution; 'overloaded' = strong warning. Tune as needed.
@@ -237,6 +239,15 @@ export const setObjective = async (req: Request, res: Response, next: NextFuncti
   await sessionRepo.appendMessages(id, [entry]);
   emitToSession(id, 'decoy:message', entry);
   emitToSession(id, 'decoy:objective', { sessionId: id, objective: text });
+
+  notificationService.notify({
+    userId: userId.toString(),
+    sessionId: id,
+    type: 'objective_update',
+    title: 'Objective updated',
+    body: text.slice(0, 100),
+    metadata: { objective: text },
+  });
 
   next({ objective: text, statusCode: 200, msg: 'Objective set' });
 };

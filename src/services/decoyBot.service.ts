@@ -7,6 +7,7 @@ import { DecoyAccountRepository } from '../repository/decoyAccount.repository';
 import { DecoyAIService } from './decoyAI.service';
 import { uploadBufferToS3 } from '../utils/s3.util';
 import { emitToSession, emitToUser } from '../socket/emitter';
+import { getNotificationService, NotificationService } from './notification.service';
 import config from '../config';
 import logger from '../utils/logger';
 
@@ -107,12 +108,15 @@ export class DecoyBotService {
   private onlinePresence = new Map<string, ReturnType<typeof setTimeout>>();
   // One delayed self-heal retry per session after an AUTH_KEY_DUPLICATED pause.
   private authDupRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly notificationService: NotificationService;
 
   constructor(
     private readonly sessionRepo: DecoySessionRepository,
     private readonly accountRepo: DecoyAccountRepository,
     private readonly decoyAI: DecoyAIService
-  ) {}
+  ) {
+    this.notificationService = getNotificationService();
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   //  Public API
@@ -271,6 +275,19 @@ export class DecoyBotService {
 
     logger.info(`[DecoyBot] Session ${sessionId} → ${newStatus}${reason ? ` (${reason})` : ''}`);
     emitToSession(sessionId, 'decoy:status', reason ? { status: newStatus, reason } : { status: newStatus });
+
+    // Persist status-change notification
+    const statusUserId = this.sessionUsers.get(sessionId);
+    if (statusUserId) {
+      this.notificationService.notify({
+        userId: statusUserId,
+        sessionId,
+        type: 'status_change',
+        title: `Session ${newStatus}`,
+        body: reason || `Session has been ${newStatus}.`,
+        metadata: { status: newStatus, reason },
+      });
+    }
   }
 
   async resumeSession(sessionId: string): Promise<void> {
@@ -463,11 +480,18 @@ export class DecoyBotService {
 
       const userId = this.sessionUsers.get(sessionId);
       if (userId) {
-        emitToUser(userId, 'decoy:notification', {
+        const lastContent = targetMessages[targetMessages.length - 1]?.content?.slice(0, 100) || '';
+        this.notificationService.notify({
+          userId,
           sessionId,
-          unseenCount: (snapshot.unseenCount ?? 0) + targetMessages.length,
-          lastMessage: targetMessages[targetMessages.length - 1]?.content?.slice(0, 100) || '',
-          timestamp: Date.now(),
+          type: 'new_message',
+          title: 'New message from target',
+          body: lastContent,
+          metadata: {
+            unseenCount: (snapshot.unseenCount ?? 0) + targetMessages.length,
+            messageCount: targetMessages.length,
+            direction: 'inbound',
+          },
         });
       }
 
@@ -659,6 +683,23 @@ export class DecoyBotService {
     }
     for (const msg of aiMessages) {
       emitToSession(sessionId, 'decoy:message', msg);
+    }
+
+    // Notify operator that the decoy replied (outbound message notification)
+    const replyUserId = this.sessionUsers.get(sessionId);
+    if (replyUserId) {
+      const lastAiContent = aiMessages[aiMessages.length - 1]?.content?.slice(0, 100) || '';
+      this.notificationService.notify({
+        userId: replyUserId,
+        sessionId,
+        type: 'new_message',
+        title: 'Your decoy sent a reply',
+        body: lastAiContent,
+        metadata: {
+          messageCount: aiMessages.length,
+          direction: 'outbound',
+        },
+      });
     }
 
     // If target doesn't reply in 4 h, send a natural follow-up
