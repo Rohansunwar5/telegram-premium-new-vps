@@ -11,8 +11,51 @@ import { getNotificationService, NotificationService } from './notification.serv
 import config from '../config';
 import logger from '../utils/logger';
 
-const POLL_INTERVAL_MS = 5000;
-const MAX_CONSECUTIVE_ERRORS = 3;
+// 20s poll cadence: 4× fewer getMessages calls per session than a 5s poll,
+// which is the main lever for fitting more sessions onto one decoy account's
+// Telegram rate budget. Detection latency (≤20s) is negligible against the
+// 60s–5min adaptive reply delay, so this does not hurt human-likeness.
+const POLL_INTERVAL_MS = 20000;
+// Transient poll failures (network blips, server errors, flood-waits) should not
+// kill a long-running session on a momentary hiccup. We tolerate a generous run
+// of them and back the session off before the next attempt. Fatal errors
+// (auth/banned/blocked) bypass this budget and pause immediately.
+const MAX_CONSECUTIVE_ERRORS = 12;
+// After an error-budget pause, attempt one self-heal resume rather than leaving
+// the session paused for a human to notice.
+const ERROR_PAUSE_SELF_HEAL_MS = 5 * 60 * 1000;
+
+// Telegram RPC error substrings that mean the session is genuinely broken and
+// retrying is pointless — pause immediately rather than burning the error budget.
+const FATAL_ERROR_PATTERNS = [
+  'AUTH_KEY',           // AUTH_KEY_DUPLICATED / _UNREGISTERED / _INVALID
+  'USER_DEACTIVATED',
+  'SESSION_REVOKED',
+  'SESSION_EXPIRED',
+  'PHONE_NUMBER_BANNED',
+  'USER_BANNED_IN_CHANNEL',
+  'PEER_ID_INVALID',    // target no longer resolvable
+  'USER_IS_BLOCKED',    // decoy was blocked by the target
+  'YOU_BLOCKED_USER',
+];
+
+// AUTH_KEY_DUPLICATED is handled by its own dedicated self-heal path on connect,
+// so it's classified fatal here only to stop the poll loop quickly — the connect
+// retry/self-heal logic owns the actual recovery.
+
+function isFatalError(message: string): boolean {
+  if (!message) return false;
+  return FATAL_ERROR_PATTERNS.some((p) => message.includes(p));
+}
+
+// Returns the number of seconds Telegram asked us to wait, or null if this
+// isn't a flood-wait error. Reads the structured `.seconds` from GramJS's
+// FloodWaitError, falling back to parsing "FLOOD_WAIT_X" from the message.
+function getFloodWaitSeconds(err: any): number | null {
+  if (typeof err?.seconds === 'number' && err.seconds >= 0) return err.seconds;
+  const m = /FLOOD_WAIT_(\d+)/.exec(err?.message ?? '');
+  return m ? parseInt(m[1], 10) : null;
+}
 
 
 // Proportional to message length at ~50 chars/sec, clamped 1.5–8 s
@@ -108,6 +151,11 @@ export class DecoyBotService {
   private onlinePresence = new Map<string, ReturnType<typeof setTimeout>>();
   // One delayed self-heal retry per session after an AUTH_KEY_DUPLICATED pause.
   private authDupRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Epoch ms until which polling is suspended because Telegram returned
+  // FLOOD_WAIT. While set, _poll returns early without counting an error.
+  private floodWaitUntil = new Map<string, number>();
+  // One delayed self-heal retry per session after an error-budget pause.
+  private errorPauseRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly notificationService: NotificationService;
 
   constructor(
@@ -242,6 +290,16 @@ export class DecoyBotService {
       clearTimeout(authDupTimer);
       this.authDupRetryTimers.delete(sessionId);
     }
+
+    // Cancel any pending error-budget self-heal retry. As with the auth-dup
+    // timer, the catch block re-arms this *after* stopSession returns, so
+    // clearing here only kills retries from manual stops/resumes.
+    const errorPauseTimer = this.errorPauseRetryTimers.get(sessionId);
+    if (errorPauseTimer) {
+      clearTimeout(errorPauseTimer);
+      this.errorPauseRetryTimers.delete(sessionId);
+    }
+    this.floodWaitUntil.delete(sessionId);
 
     const offlineTimer = this.onlinePresence.get(sessionId);
     if (offlineTimer) {
@@ -378,6 +436,14 @@ export class DecoyBotService {
   // the reply timer runs independently so the loop keeps ticking normally.
   private async _poll(sessionId: string): Promise<void> {
     if (this.pollingActive.get(sessionId)) return;
+
+    // Respect any active flood-wait window — skip this tick without touching the
+    // error budget. Telegram penalises continued requests during a flood-wait,
+    // so backing off here is what actually lets the session recover.
+    const waitUntil = this.floodWaitUntil.get(sessionId);
+    if (waitUntil && Date.now() < waitUntil) return;
+    if (waitUntil) this.floodWaitUntil.delete(sessionId);
+
     this.pollingActive.set(sessionId, true);
 
     try {
@@ -535,14 +601,47 @@ export class DecoyBotService {
       this.consecutiveErrors.set(sessionId, 0);
 
     } catch (err: any) {
+      const message: string = err?.message ?? String(err);
+
+      // 1) Flood-wait: Telegram told us exactly how long to back off. Suspend
+      //    polling for that window (plus a small jitter) and DON'T count it as a
+      //    failure — hammering during a flood-wait only extends the penalty.
+      const floodSeconds = getFloodWaitSeconds(err);
+      if (floodSeconds != null) {
+        const jitterMs = Math.floor(Math.random() * 3000);
+        const waitMs = floodSeconds * 1000 + jitterMs;
+        this.floodWaitUntil.set(sessionId, Date.now() + waitMs);
+        logger.warn(
+          `[DecoyBot] Session ${sessionId} hit FLOOD_WAIT — suspending polling for ${floodSeconds}s`
+        );
+        return;
+      }
+
+      // 2) Fatal: auth/banned/blocked/unresolvable. No point retrying — pause now.
+      if (isFatalError(message)) {
+        logger.error(`[DecoyBot] Session ${sessionId} hit fatal poll error — auto-pausing: ${message}`);
+        await this.stopSession(sessionId, 'paused', `Auto-paused: ${message}`);
+        return;
+      }
+
+      // 3) Transient (network blip, ServerError/-503, timeout): count it against
+      //    a generous budget. Each consecutive failure backs the next attempt off
+      //    exponentially (capped) so a brief outage can't burn the budget in 15s.
       const errorCount = (this.consecutiveErrors.get(sessionId) ?? 0) + 1;
       this.consecutiveErrors.set(sessionId, errorCount);
+
+      const backoffMs = Math.min(5 * 60 * 1000, POLL_INTERVAL_MS * 2 ** Math.min(errorCount, 6));
+      this.floodWaitUntil.set(sessionId, Date.now() + backoffMs);
+
       logger.error(
-        `[DecoyBot] Poll error (${errorCount}/${MAX_CONSECUTIVE_ERRORS}) session=${sessionId}: ${err.message}`
+        `[DecoyBot] Transient poll error (${errorCount}/${MAX_CONSECUTIVE_ERRORS}) ` +
+        `session=${sessionId}, backing off ${Math.round(backoffMs / 1000)}s: ${message}`
       );
+
       if (errorCount >= MAX_CONSECUTIVE_ERRORS) {
         logger.error(`[DecoyBot] Session ${sessionId} exceeded error budget — auto-pausing`);
         await this.stopSession(sessionId, 'paused', 'Auto-paused: too many consecutive errors');
+        this._scheduleErrorPauseSelfHeal(sessionId);
       }
     } finally {
       this.pollingActive.set(sessionId, false);
@@ -943,6 +1042,27 @@ export class DecoyBotService {
     }, FOUR_HOURS);
 
     this.ghostFollowUpTimers.set(sessionId, timer);
+  }
+
+  // After an error-budget pause, schedule ONE delayed resume so a transient
+  // outage that outlasted the budget doesn't leave the session paused for a
+  // human to notice. stopSession clears this timer on any manual stop/resume,
+  // and we re-arm it here *after* stopSession has returned. Only one per session.
+  private _scheduleErrorPauseSelfHeal(sessionId: string): void {
+    if (!config.DECOY_BOT_ENABLED) return;
+    if (this.errorPauseRetryTimers.has(sessionId)) return;
+
+    logger.warn(
+      `[DecoyBot] Session ${sessionId} error-paused — scheduling one self-heal resume ` +
+      `in ${ERROR_PAUSE_SELF_HEAL_MS / 60000} min`
+    );
+    const timer = setTimeout(() => {
+      this.errorPauseRetryTimers.delete(sessionId);
+      this.resumeSession(sessionId).catch((e) =>
+        logger.error(`[DecoyBot] Error-pause self-heal resume failed for ${sessionId}:`, e)
+      );
+    }, ERROR_PAUSE_SELF_HEAL_MS);
+    this.errorPauseRetryTimers.set(sessionId, timer);
   }
 
   private _cancelGhostFollowUp(sessionId: string): void {
