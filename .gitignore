@@ -74,7 +74,10 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
-auth/
+# Anchored to repo root: the runtime auth dir (bkpsch session/Playwright data).
+# A bare `auth/` also matched src/middlewares/auth/ and silently un-tracked
+# source files there — keep the leading slash.
+/auth/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -130,5 +133,5 @@ yarn-debug.log*
 yarn-error.log*
 
 data.json
-auth/
-auth/*
+/auth/
+/auth/*
