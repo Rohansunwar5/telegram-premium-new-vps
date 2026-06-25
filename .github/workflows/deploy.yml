@@ -41,10 +41,17 @@ jobs:
             fi
             # ------------------------------------------------------------------
 
+            # Fail the deploy on any error below — never reload PM2 onto a
+            # broken build (a missing-module dist crash-loops the server).
+            set -e
+
             cd ~/telegram-premium
             git fetch origin
             git reset --hard origin/main
             npm install
+            # Typecheck GATE: abort before touching dist if types don't compile,
+            # so the running process keeps serving the last-good build.
+            npx tsc --noEmit
             npm run build
 
             # Reload via the ecosystem file. startOrReload honours the file's
