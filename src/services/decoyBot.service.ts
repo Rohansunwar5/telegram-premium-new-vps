@@ -419,12 +419,19 @@ export class DecoyBotService {
     await Promise.allSettled(sessionIds.map((id) => this.stopSession(id, newStatus)));
   }
 
-  // Synchronous best-effort disconnect — safe to call from process 'exit' event.
-  disconnectAllClients(): void {
-    for (const [, entry] of this.accountClients) {
-      try { entry.client.disconnect(); } catch { /* ignore */ }
-    }
+  // Disconnect every pooled MTProto client to free the auth key. Awaitable so a
+  // graceful shutdown can confirm the disconnects flushed before the process
+  // exits and the replacement connects (prevents AUTH_KEY_DUPLICATED on
+  // restart/deploy). Still safe to call fire-and-forget from a synchronous
+  // process 'exit' handler — the disconnect is at least initiated.
+  async disconnectAllClients(): Promise<void> {
+    const clients = Array.from(this.accountClients.values()).map((e) => e.client);
     this.accountClients.clear();
+    await Promise.allSettled(
+      clients.map((c) => {
+        try { return Promise.resolve(c.disconnect()); } catch { return Promise.resolve(); }
+      })
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -651,6 +658,16 @@ export class DecoyBotService {
   // Runs after the adaptive delay. Fetches fresh context so any messages the
   // target sent during the wait window are included in the reply.
   private async _doReply(sessionId: string): Promise<void> {
+    // Consume the pending image buffer up-front so it is freed on EVERY exit
+    // path. Previously this lived below the early returns, so a _doReply that
+    // bailed (paused session, no client, already-responded) left the image
+    // Buffer stuck in the Map — a slow leak that ratchets RSS toward the
+    // max_memory_restart cap.
+    const imageBuf = this.pendingImages.get(sessionId);
+    const imageKind = this.pendingImageKinds.get(sessionId);
+    this.pendingImages.delete(sessionId);
+    this.pendingImageKinds.delete(sessionId);
+
     const status = await this.sessionRepo.findStatus(sessionId);
     if (!status || status.status !== 'active') return;
 
@@ -683,11 +700,6 @@ export class DecoyBotService {
     const pendingTarget = since.filter((m) => m.role === 'target');
 
     if (!pendingTarget.length) return;
-
-    const imageBuf = this.pendingImages.get(sessionId);
-    const imageKind = this.pendingImageKinds.get(sessionId);
-    this.pendingImages.delete(sessionId);
-    this.pendingImageKinds.delete(sessionId);
 
     const combinedInput = pendingTarget
       .map((m) => {

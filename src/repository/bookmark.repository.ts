@@ -82,8 +82,8 @@ export class BookmarkRepository {
         });
     }
 
-    async getBookmarkById(bookmarkId: string):Promise<IBookmark | null> {
-        return this._bookmarkModel.findById(bookmarkId);
+    async getBookmarkById(bookmarkId: string, session?: mongoose.ClientSession):Promise<IBookmark | null> {
+        return this._bookmarkModel.findById(bookmarkId).session(session ?? null);
     }
 
     async getBookmarkByUserAndChannel(userId: string, channelId: string): Promise<IBookmark | null> {
@@ -94,11 +94,11 @@ export class BookmarkRepository {
         return this._bookmarkModel.find({ userId, isActive: true }).sort({ createdAt: -1 });
     }
 
-    async updateBookmark(bookmarkId: string, params: IUpdateBookmarkParams): Promise<IBookmark | null> {
+    async updateBookmark(bookmarkId: string, params: IUpdateBookmarkParams, session?: mongoose.ClientSession): Promise<IBookmark | null> {
         return this._bookmarkModel.findByIdAndUpdate(
             bookmarkId,
             { $set: params },
-            { new: true }
+            { new: true, session: session ?? undefined }
         );
     }
 
@@ -137,7 +137,7 @@ export class BookmarkRepository {
         });
     }
 
-    async createScrapeData(params: ICreateScrapeDataParams): Promise<IScrapeData> {
+    async createScrapeData(params: ICreateScrapeDataParams, session?: mongoose.ClientSession): Promise<IScrapeData> {
         try {
             logger.info(`Creating scrape data with params:`, {
                 bookmarkId: params.bookmarkId,
@@ -188,7 +188,10 @@ export class BookmarkRepository {
                 };
             }
 
-            const scrapeData = await this._scrapeDataModel.create(processedParams);
+            // create() requires the array form when an options object (session) is passed.
+            const scrapeData = session
+                ? (await this._scrapeDataModel.create([processedParams], { session }))[0]
+                : await this._scrapeDataModel.create(processedParams);
 
             logger.info(`✅ Scrape data created successfully with ID: ${scrapeData._id}`);
             logger.info(`Final saved data:`, {
@@ -247,6 +250,25 @@ export class BookmarkRepository {
             logger.error('Error getting latest scrape data:', error);
             return null;
         }
+    }
+
+    // Batched version of getLatestScrapeData: returns the newest scrapeData per
+    // bookmark in ONE aggregation (avoids the dashboard N+1). Keyed by bookmarkId string.
+    async getLatestScrapeDataForBookmarks(bookmarkIds: string[]): Promise<Map<string, IScrapeData>> {
+        const map = new Map<string, IScrapeData>();
+        if (bookmarkIds.length === 0) return map;
+
+        const objectIds = bookmarkIds.map((id) => new mongoose.Types.ObjectId(id));
+        const rows = await this._scrapeDataModel.aggregate([
+            { $match: { bookmarkId: { $in: objectIds } } },
+            { $sort: { bookmarkId: 1, firstMessageTimestamp: -1 } },
+            { $group: { _id: '$bookmarkId', doc: { $first: '$$ROOT' } } },
+        ]);
+
+        for (const row of rows) {
+            map.set(row._id.toString(), row.doc as IScrapeData);
+        }
+        return map;
     }
 
     // Get the timestamp of the NEWEST message we have

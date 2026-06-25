@@ -26,17 +26,17 @@ export const globalHandler = async (data: any, req: Request, res: ResponseType, 
     if (data instanceof Error) {
       const statusCode = 500;
       const errorId = nanoid();
-      const message = `route: ${req.path}, errorMsg: ${data.message}, rayId: ${errorId}`;
-      logger.error(message);
+      // Log the full detail server-side only; never echo data.message to the client.
+      logger.error(`route: ${req.path}, errorMsg: ${data.message}, rayId: ${errorId}`);
       return res.status(statusCode).json({
         errors: [
           {
-            message
+            message: 'Internal server error'
           }
         ],
         statusCode,
-        error: message,
-        message: data.message,
+        error: `rayId: ${errorId}`,
+        message: 'Internal server error',
         success: false
       });
     }

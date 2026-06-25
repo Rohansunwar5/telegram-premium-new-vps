@@ -1,20 +1,12 @@
 // force-process.ts
 // Force process waiting jobs
 
-import Bull from 'bull';
-import BookmarkService from '../services/bookmark.service';
-import { BookmarkRepository } from '../repository/bookmark.repository';
-import { S3Service } from '../services/s3.service';
-import { ChannelService } from '../services/channel.service';
-import { UserRepository } from '../repository/user.repository';
-
-const scrapeQueue = new Bull('scrape-queue', {
-  redis: {
-    host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-    port: 13142,
-    password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6'
-  }
-});
+import BookmarkService from '../src/services/bookmark.service';
+import { BookmarkRepository } from '../src/repository/bookmark.repository';
+import { S3Service } from '../src/services/s3.service';
+import { ChannelService } from '../src/services/channel.service';
+import { UserRepository } from '../src/repository/user.repository';
+import { scrapeQueue } from '../src/config/redis';
 
 async function forceProcess() {
   try {

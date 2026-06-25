@@ -31,6 +31,10 @@ export interface IPollingStateUpdate {
 }
 
 export class DecoySessionRepository {
+  // Hard cap on stored messages per session — keeps the document well under
+  // MongoDB's 16 MB limit. Generous so no real conversation hits it.
+  static readonly MAX_MESSAGES = 1000;
+
   async create(params: ICreateDecoySessionParams): Promise<IDecoySession> {
     return DecoySessionModel.create(params);
   }
@@ -70,13 +74,16 @@ export class DecoySessionRepository {
   /**
    * Push one or more messages onto the conversation history.
    * Using $push with $each avoids loading and re-saving the full document.
+   * $slice: -MAX_MESSAGES caps the array to the most recent N so the document
+   * can never grow toward MongoDB's 16 MB limit. The AI context reads only the
+   * tail (findForPolling uses $slice: -50), so trimming the head is safe.
    */
   async appendMessages(
     sessionId: string,
     messages: IDecoyMessage[]
   ): Promise<void> {
     await DecoySessionModel.findByIdAndUpdate(sessionId, {
-      $push: { messages: { $each: messages } },
+      $push: { messages: { $each: messages, $slice: -DecoySessionRepository.MAX_MESSAGES } },
     });
   }
 

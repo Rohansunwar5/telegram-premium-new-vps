@@ -45,7 +45,7 @@ class AdminAuthService {
     const sessionId = nanoid();
 
     const token = jwt.sign(
-      { _id: adminId, sessionId },
+      { _id: adminId, sessionId, role: 'admin' },
       config.ADMIN_JWT_SECRET,
       { expiresIn: '24h' }
     );

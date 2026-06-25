@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { alertQueue, scrapeQueue } from '../config/redis';
 import { BadRequestError } from '../errors/bad-request.error';
 import { InternalServerError } from '../errors/internal-server.error';
@@ -6,6 +7,7 @@ import { IScrapeData } from '../models/scrapeData.model';
 import { BookmarkRepository } from '../repository/bookmark.repository';
 import { UserRepository } from '../repository/user.repository';
 import logger from '../utils/logger';
+import { calculateScrapeInterval, formatInterval } from '../utils/scrapeInterval.util';
 import { ChannelService } from './channel.service';
 import mailService from './mail.service';
 import { S3Service } from './s3.service';
@@ -156,23 +158,20 @@ class BookmarkService {
     async getUserBookmarks(userId: string) {
         const bookmarks = await this._bookmarkRepository.getUserBookmarks(userId);
 
-        // Get latest scrape data for each bookmark
-        const bookmarksWithStatus = await Promise.all(
-        bookmarks.map(async (bookmark) => {
-            const latestScrape = await this._bookmarkRepository.getLatestScrapeData(
-            bookmark._id.toString()
-            );
-
-            return {
-            ...bookmark.toObject(),
-            lastScrapedAt: latestScrape?.scrapedAt || null,
-            nextScrapeAt: bookmark.nextScrapeAt,
-            messageCount: latestScrape?.messageCount || 0
-            };
-        })
+        // One batched query for the latest scrape of every bookmark (no N+1).
+        const latestByBookmark = await this._bookmarkRepository.getLatestScrapeDataForBookmarks(
+            bookmarks.map((b) => b._id.toString())
         );
 
-        return bookmarksWithStatus;
+        return bookmarks.map((bookmark) => {
+            const latestScrape = latestByBookmark.get(bookmark._id.toString());
+            return {
+                ...bookmark.toObject(),
+                lastScrapedAt: latestScrape?.scrapedAt || null,
+                nextScrapeAt: bookmark.nextScrapeAt,
+                messageCount: latestScrape?.messageCount || 0
+            };
+        });
     }
 
     async processScrapeJob(bookmarkId: string, channelId: string, channelName: string) {
@@ -217,7 +216,7 @@ class BookmarkService {
             if (!scrapeResult || !scrapeResult.messages || scrapeResult.messages.length === 0)
             {
                 if (latestScrape && latestScrape.timeDifference) {
-                    const nextInterval = this.calculateScrapeInterval(latestScrape.timeDifference);
+                    const nextInterval = calculateScrapeInterval(latestScrape.timeDifference);
                     await this.scheduleNextScrape(bookmarkId, channelId, channelName, nextInterval);
                 } else {
                     // Default to 1 hour if no previous data
@@ -324,7 +323,20 @@ class BookmarkService {
                 hasStatistics: !!scrapeDataPayload.statistics
             });
 
-            const scrapeData = await this._bookmarkRepository.createScrapeData(scrapeDataPayload);
+            // Calculate next scrape interval based on activity
+            const nextScrapeInterval = calculateScrapeInterval(timeDifference);
+            const nextScrapeAt = new Date(Date.now() + nextScrapeInterval);
+
+            // Persist atomically: create scrapeData + update aggregate stats +
+            // advance the schedule commit together, so a crash can't leave the
+            // stats stale relative to the stored data. A retried job re-runs the
+            // since-filter above and no-ops (idempotent) since the new data is
+            // already the latest.
+            const scrapeData = await this.persistScrapeResult(bookmarkId, scrapeDataPayload, {
+                lastScrapedAt: new Date(),
+                nextScrapeAt,
+                scrapeInterval: nextScrapeInterval
+            });
 
             logger.info(`✅ Scrape data created with ID: ${scrapeData._id}`);
             logger.info(`📊 Saved analysis data:`, {
@@ -335,24 +347,11 @@ class BookmarkService {
                 uniqueUsersSaved: scrapeData.statistics?.uniqueUsersCount || 0
             });
 
-            await this.updateBookmarkAggregateStatistics(bookmarkId, scrapeData);
-
-            // Calculate next scrape interval based on activity
-            const nextScrapeInterval = this.calculateScrapeInterval(timeDifference);
-            const nextScrapeAt = new Date(Date.now() + nextScrapeInterval);
-
-            // Update bookmark with next scrape time
-            await this._bookmarkRepository.updateBookmark(bookmarkId, {
-                lastScrapedAt: new Date(),
-                nextScrapeAt,
-                scrapeInterval: nextScrapeInterval
-            });
-
             // Schedule next scrape
             await this.scheduleNextScrape(bookmarkId, channelId, channelName, nextScrapeInterval);
 
             logger.info(`✅ Scrape completed: ${newMessages.length} new messages saved`);
-            logger.info(`⏰ Next scrape scheduled in ${this.formatInterval(nextScrapeInterval)}`);
+            logger.info(`⏰ Next scrape scheduled in ${formatInterval(nextScrapeInterval)}`);
 
             return {
                 ...scrapeData.toObject(),
@@ -366,9 +365,48 @@ class BookmarkService {
         }
     }
 
-    private async updateBookmarkAggregateStatistics(bookmarkId: string, scrapeData: IScrapeData) {
+    // Commit create-scrapeData + aggregate-stats + schedule-advance in one
+    // transaction. Falls back to sequential writes on a non-replica-set Mongo
+    // (e.g. a standalone local dev instance) so dev still works.
+    private async persistScrapeResult(
+        bookmarkId: string,
+        scrapeDataPayload: any,
+        bookmarkUpdate: { lastScrapedAt: Date; nextScrapeAt: Date; scrapeInterval: number }
+    ): Promise<IScrapeData> {
+        const writes = async (session?: mongoose.ClientSession): Promise<IScrapeData> => {
+            const scrapeData = await this._bookmarkRepository.createScrapeData(scrapeDataPayload, session);
+            await this.updateBookmarkAggregateStatistics(bookmarkId, scrapeData, session);
+            await this._bookmarkRepository.updateBookmark(bookmarkId, bookmarkUpdate, session);
+            return scrapeData;
+        };
+
+        const session = await mongoose.startSession();
         try {
-            const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId);
+            let scrapeData!: IScrapeData;
+            await session.withTransaction(async () => {
+                scrapeData = await writes(session);
+            });
+            return scrapeData;
+        } catch (err: unknown) {
+            if (this.isTransactionUnsupported(err)) {
+                logger.warn('Mongo transactions unavailable — persisting scrape result without a transaction');
+                return writes();
+            }
+            throw err;
+        } finally {
+            await session.endSession();
+        }
+    }
+
+    private isTransactionUnsupported(err: unknown): boolean {
+        const e = err as { code?: number; message?: string };
+        return e?.code === 20 ||
+            /Transaction numbers are only allowed on a replica set|replica set member or mongos|Transactions are not supported/i.test(String(e?.message || ''));
+    }
+
+    private async updateBookmarkAggregateStatistics(bookmarkId: string, scrapeData: IScrapeData, session?: mongoose.ClientSession) {
+        try {
+            const bookmark = await this._bookmarkRepository.getBookmarkById(bookmarkId, session);
             if (!bookmark) {
                 logger.error(`Bookmark ${bookmarkId} not found when updating statistics`);
                 return;
@@ -459,12 +497,15 @@ class BookmarkService {
             updates.lastStatisticsUpdate = new Date();
 
             // Save updated bookmark
-            await this._bookmarkRepository.updateBookmark(bookmarkId, updates);
+            await this._bookmarkRepository.updateBookmark(bookmarkId, updates, session);
 
             logger.info(`✅ Updated statistics for bookmark ${bookmarkId}: ${updates.totalMessages} total messages, ${updates.totalScrapes} scrapes`);
 
         } catch (error) {
             logger.error(`Error updating bookmark statistics for ${bookmarkId}:`, error);
+            // Inside a transaction, propagate so the whole scrape write rolls back
+            // instead of committing with stale stats.
+            if (session) throw error;
         }
     }
 
@@ -725,23 +766,6 @@ class BookmarkService {
     //     }
     // }
 
-    private calculateScrapeInterval(timeDifference: number): number {
-        // If messages span less than 1 hour, scrape every hour
-        if (timeDifference < 60 * 60 * 1000) {
-        return 60 * 60 * 1000; // 1 hour
-        }
-        // If messages span 1-6 hours, use that interval
-        if (timeDifference <= 6 * 60 * 60 * 1000) {
-        return timeDifference;
-        }
-        // If messages span 6-24 hours, scrape every 6 hours
-        if (timeDifference <= 24 * 60 * 60 * 1000) {
-        return 6 * 60 * 60 * 1000; // 6 hours
-        }
-        // Otherwise, scrape once a day
-        return 24 * 60 * 60 * 1000; // 24 hours
-    }
-
     private async scheduleAlertJob(bookmark: any) {
         const [hours, minutes] = bookmark.alertTime.split(':').map(Number);
 
@@ -966,18 +990,8 @@ class BookmarkService {
                 alerts: pendingAlerts.length
             },
             scrapeInterval: bookmark.scrapeInterval ?
-                this.formatInterval(bookmark.scrapeInterval) : null
+                formatInterval(bookmark.scrapeInterval) : null
         };
-    }
-
-    private formatInterval(ms: number): string {
-        const hours = Math.floor(ms / (1000 * 60 * 60));
-        const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-
-        if (hours > 0) {
-            return `${hours}h ${minutes}m`;
-        }
-        return `${minutes}m`;
     }
 
     async getBookmarkDashboardStats(bookmarkId: string, userId: string) {

@@ -49,7 +49,8 @@ class AuthService {
 
     const token = jwt.sign({
       _id: userId.toString(),
-      sessionId
+      sessionId,
+      role: 'user'
     }, config.JWT_SECRET, { expiresIn: '24h' });
 
     const key = await encryptionKey(config.JWT_CACHE_ENCRYPTION_KEY);

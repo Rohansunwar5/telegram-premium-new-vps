@@ -114,8 +114,13 @@ import redisClient from './services/cache';
       try {
         if (cleanupQueues) await cleanupQueues();
         logger.info('Queues closed');
-        await decoyBotService.stopAllSessions('paused');
-        logger.info('Decoy sessions paused');
+        // Release the MTProto connections so the auth key is freed for the next
+        // process, but DO NOT flip session status to 'paused'. 'active' means
+        // "should be running"; resumeActiveSessions() only resumes 'active'
+        // sessions, so pausing here is exactly why every restart/deploy left
+        // sessions silently stopped until a human re-activated them.
+        await decoyBotService.disconnectAllClients();
+        logger.info('Decoy clients disconnected (sessions stay active to auto-resume)');
         await shutdownSocketEmitter();
         await redisClient.quit();
         logger.info('Redis cache closed');
@@ -131,6 +136,25 @@ import redisClient from './services/cache';
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+    // On a hard crash, release the MTProto connections before exiting so the
+    // auth key is freed for the replacement process (otherwise the next boot's
+    // resume hits AUTH_KEY_DUPLICATED until Telegram's side times out). Sessions
+    // stay 'active' in the DB, so they auto-resume after PM2 restarts us.
+    const disconnectAndExit = (label: string, err?: unknown) => {
+      logger.error(`${label} — disconnecting decoy clients before exit`, err);
+      // Await the disconnect (so the auth key is freed) but never hang the exit:
+      // race it against a 3s cap, then exit so PM2 restarts us.
+      Promise.race([
+        decoyBotService.disconnectAllClients().catch(() => { /* best-effort */ }),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]).finally(() => process.exit(1));
+    };
+    process.on('uncaughtException', (err) => disconnectAndExit('Uncaught exception', err));
+    process.on('unhandledRejection', (reason) => disconnectAndExit('Unhandled rejection', reason));
+    // 'exit' can't run async work — best-effort fire-and-forget backstop (clients
+    // are normally already disconnected by gracefulShutdown/disconnectAndExit).
+    process.on('exit', () => { void decoyBotService.disconnectAllClients(); });
 
     for (let i = 0; i < numCPUs; i++) {
       cluster.fork();
@@ -263,8 +287,10 @@ import redisClient from './services/cache';
       if (!isProduction) {
         if (cleanupQueues) await cleanupQueues();
         logger.info('Queues closed');
-        if (decoyBotService) await decoyBotService.stopAllSessions('paused');
-        logger.info('Decoy sessions paused');
+        // Disconnect clients (free the auth key) but keep sessions 'active' so
+        // they auto-resume on the next boot — see the master shutdown above.
+        if (decoyBotService) await decoyBotService.disconnectAllClients();
+        logger.info('Decoy clients disconnected (sessions stay active to auto-resume)');
         if (shutdownSocketEmitter) await shutdownSocketEmitter();
       }
 

@@ -18,7 +18,9 @@ const adminSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-adminSchema.index({ email: 1 });
+// (email already has a unique index via `unique: true` on the field above —
+// a second adminSchema.index({ email: 1 }) here was the source of the
+// "Duplicate schema index on {email:1}" warning on every boot.)
 
 export interface IAdmin extends mongoose.Document {
   _id: string;

@@ -9,6 +9,7 @@ import config from '../../config';
 interface IJWTVerifyPayload {
   _id: string;
   sessionId: string;
+  role?: 'user' | 'admin';
 }
 
 const getAuthMiddlewareByJWTSecret = (jwtSecret: string) => async (
@@ -24,7 +25,7 @@ const getAuthMiddlewareByJWTSecret = (jwtSecret: string) => async (
 
     const token = authHeader.split(' ')[1];
     if (!token) throw new BadRequestError('Token is missing or invalid');
-    const { _id, sessionId } = JWT.verify(token, jwtSecret) as IJWTVerifyPayload;
+    const { _id, sessionId, role } = JWT.verify(token, jwtSecret) as IJWTVerifyPayload;
 
     const key = await encryptionKey(config.JWT_CACHE_ENCRYPTION_KEY);
     const cachedJWT = await encodedJWTCacheManager.get({ userId: _id, sessionId });
@@ -41,7 +42,8 @@ const getAuthMiddlewareByJWTSecret = (jwtSecret: string) => async (
 
     req.user = {
       _id,
-      sessionId
+      sessionId,
+      role
     };
     next();
   } catch (error) {

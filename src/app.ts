@@ -11,10 +11,11 @@ import { asyncHandler } from './utils/asynchandler';
 import { notFound } from './controllers/health.controller';
 import { globalHandler } from './middlewares/error-handler.middleware';
 import rootRouter from './routes/v1.route';
+import { globalLimiter } from './middlewares/rate-limit.middleware';
 import config from './config';
 
 const app = express();
-app.set('trust proxy', true); // very important for rate-limiter to trust the x-forwarded-for headers
+app.set('trust proxy', true); // trust nginx x-forwarded-for so the rate-limiter keys on the real client IP
 app.set('view engine', 'ejs');
 app.set('views', 'src/views');
 
@@ -26,7 +27,9 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
-    if (origin === config.ALLOWED_ORIGIN || isLocalhost(origin)) {
+    // Only allow localhost origins outside production.
+    const allowLocalhost = config.NODE_ENV !== 'production' && isLocalhost(origin);
+    if (origin === config.ALLOWED_ORIGIN || allowLocalhost) {
       return callback(null, true);
     }
     callback(new Error(`CORS: origin ${origin} not allowed`));
@@ -37,9 +40,16 @@ app.use(cors({
 }));
 app.use(xss());
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", config.ALLOWED_ORIGIN],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
-  frameguard: false,
 }));
 app.use(mongoSanitize());
 
@@ -54,6 +64,8 @@ app.use((req, res, next) => {
     next();
   }
 });
+
+app.use(globalLimiter);
 
 app.use(rootRouter);
 

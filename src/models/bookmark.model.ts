@@ -104,6 +104,8 @@ const bookmarkSchema = new mongoose.Schema(
 bookmarkSchema.index({ userId: 1, channelId: 1 }, { unique: true });
 bookmarkSchema.index({ nextScrapeAt: 1, isActive: 1 });
 bookmarkSchema.index({ alertTime: 1, isActive: 1 });
+// Covers the dashboard list: find({ userId, isActive }).sort({ createdAt: -1 })
+bookmarkSchema.index({ userId: 1, isActive: 1, createdAt: -1 });
 
 
 export interface IBookmark extends mongoose.Document {

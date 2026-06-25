@@ -106,6 +106,10 @@ export class UserRepository {
         resetAt: resetDate,
       };
       user.clickCount.push(monthlyRecord);
+      // Keep only the last 24 monthly entries (two years).
+      if (user.clickCount.length > 24) {
+        user.clickCount = user.clickCount.slice(-24);
+      }
     } else {
       monthlyRecord.count = (monthlyRecord.count || 0) + 1;
     }

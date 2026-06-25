@@ -73,6 +73,8 @@ const scrapeDataSchema = new mongoose.Schema(
 
 scrapeDataSchema.index({ bookmarkId: 1, scrapedAt: -1 });
 scrapeDataSchema.index({ bookmarkId: 1, isProcessed: 1 });
+// Serves getLatestScrapeData + the batched getLatestScrapeDataForBookmarks sort.
+scrapeDataSchema.index({ bookmarkId: 1, firstMessageTimestamp: -1 });
 
 export interface IScrapeData extends mongoose.Document {
   _id: string;

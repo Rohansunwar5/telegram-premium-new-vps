@@ -1,23 +1,7 @@
 // clear-failed-jobs.ts
 // Run this to clear failed jobs and retry them
 
-import Bull from 'bull';
-
-const scrapeQueue = new Bull('scrape-queue', {
-  redis: {
-    host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-    port: 13142,
-    password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6'
-  }
-});
-
-const alertQueue = new Bull('alert-queue', {
-  redis: {
-    host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-    port: 13142,
-    password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6'
-  }
-});
+import { scrapeQueue, alertQueue } from '../src/config/redis';
 
 async function cleanQueues() {
   try {

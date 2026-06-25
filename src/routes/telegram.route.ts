@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../utils/asynchandler';
 import { analyzeChannel, checkPhoneNumber, proxyRequest, tgDev } from '../controllers/telegram.controller';
 import isLoggedIn from '../middlewares/isLoggedIn.middleware';
+import { aiLimiter } from '../middlewares/rate-limit.middleware';
 import multer from 'multer';
 
 import { additionalChannel, searchChannels } from '../controllers/telegram.controller';
@@ -15,7 +16,7 @@ telegramRouter.post('/channel-messages', isLoggedIn, asyncHandler(additionalChan
 telegramRouter.post('/proxy', isLoggedIn, upload.none(), asyncHandler(proxyRequest));
 telegramRouter.post('/proxy/fetch-messages', isLoggedIn, upload.none(), asyncHandler(tgDev));
 telegramRouter.post('/check-phone', isLoggedIn, asyncHandler(checkPhoneNumber));
-telegramRouter.post('/analyze-channel', isLoggedIn, asyncHandler(analyzeChannel));
-telegramRouter.post('/analyze-channel-darkmap', asyncHandler(analyzeChannel));
+telegramRouter.post('/analyze-channel', isLoggedIn, aiLimiter, asyncHandler(analyzeChannel));
+telegramRouter.post('/analyze-channel-darkmap', aiLimiter, asyncHandler(analyzeChannel));
 
 export default telegramRouter;

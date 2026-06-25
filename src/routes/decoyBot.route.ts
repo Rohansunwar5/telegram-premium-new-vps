@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import isLoggedIn from '../middlewares/isLoggedIn.middleware';
+import { aiLimiter } from '../middlewares/rate-limit.middleware';
 import { asyncHandler } from '../utils/asynchandler';
 import {
   createSession,
@@ -24,7 +25,7 @@ import {
 
 const decoyBotRouter = Router();
 
-decoyBotRouter.post('/', isLoggedIn, createSessionValidator, asyncHandler(createSession));
+decoyBotRouter.post('/', isLoggedIn, aiLimiter, createSessionValidator, asyncHandler(createSession));
 decoyBotRouter.get('/', isLoggedIn, asyncHandler(listSessions));
 decoyBotRouter.get('/accounts', isLoggedIn, asyncHandler(listAccounts));
 decoyBotRouter.get('/:id/messages', isLoggedIn, sessionIdParamValidator, asyncHandler(getMessages));
@@ -34,7 +35,7 @@ decoyBotRouter.post('/:id/send', isLoggedIn, sessionIdParamValidator, asyncHandl
 decoyBotRouter.post('/:id/unseemsg', isLoggedIn, sessionIdParamValidator, asyncHandler(resetUnseen));
 decoyBotRouter.put('/:id/objective', isLoggedIn, setObjectiveValidator, asyncHandler(setObjective));
 decoyBotRouter.delete('/:id/objective', isLoggedIn, sessionIdParamValidator, asyncHandler(clearObjective));
-decoyBotRouter.post('/:id/nudge', isLoggedIn, setNudgeValidator, asyncHandler(sendNudge));
+decoyBotRouter.post('/:id/nudge', isLoggedIn, aiLimiter, setNudgeValidator, asyncHandler(sendNudge));
 decoyBotRouter.delete('/:id', isLoggedIn, sessionIdParamValidator, asyncHandler(deleteSession));
 
 export default decoyBotRouter;

@@ -5,14 +5,15 @@ import { adminLogin, adminSignup } from '../controllers/adminAuth.controller';
 import { listAccounts, addAccount, updateSessionString, deleteAccount } from '../controllers/decoyAdmin.controller';
 import { addAccountValidator, accountIdParamValidator, updateSessionStringValidator } from '../middlewares/validators/decoyAdmin.validator';
 import { loginValidator } from '../middlewares/validators/auth.validator';
+import { authLimiter } from '../middlewares/rate-limit.middleware';
 
 const decoyAdminRouter = Router();
 
 // Public — admin login
-decoyAdminRouter.post('/auth/login', loginValidator, asyncHandler(adminLogin));
+decoyAdminRouter.post('/auth/login', authLimiter, loginValidator, asyncHandler(adminLogin));
 
 // Public — admin signup (open for testing; restrict before production)
-decoyAdminRouter.post('/auth/signup', loginValidator, asyncHandler(adminSignup));
+decoyAdminRouter.post('/auth/signup', authLimiter, loginValidator, asyncHandler(adminSignup));
 
 // Protected — account pool management
 decoyAdminRouter.get('/decoy-accounts', isAdminLoggedIn, asyncHandler(listAccounts));

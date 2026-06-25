@@ -1,15 +1,7 @@
 // check-processors.ts
 // Check if processors are actually registered and working
 
-import Bull from 'bull';
-
-const scrapeQueue = new Bull('scrape-queue', {
-  redis: {
-    host: 'redis-13142.c62.us-east-1-4.ec2.redns.redis-cloud.com',
-    port: 13142,
-    password: 'Hie2Ze4t6SYBnozINBsJS2yeWWuURTz6'
-  }
-});
+import { scrapeQueue } from '../src/config/redis';
 
 async function checkProcessors() {
   try {

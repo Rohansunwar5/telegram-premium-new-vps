@@ -42,7 +42,9 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-userSchema.index({ email: 1 });
+// Email is the login key — must be unique. NOTE: if legacy duplicate emails exist
+// in production, this index build will fail until they are de-duplicated.
+userSchema.index({ email: 1 }, { unique: true });
 
 export interface IUser extends mongoose.Schema {
   _id: string;

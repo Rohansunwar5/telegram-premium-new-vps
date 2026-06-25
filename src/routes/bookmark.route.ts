@@ -8,18 +8,21 @@ const bookmarkRouter = Router();
 bookmarkRouter.post('/', isLoggedIn, asyncHandler(createBookmark));
 bookmarkRouter.put('/:bookmarkId', isLoggedIn, asyncHandler(updateBookmark));
 bookmarkRouter.delete('/:bookmarkId', isLoggedIn, asyncHandler(deleteBookmark));
+
+// Static GET routes MUST come before the parameterized GET /:bookmarkId,
+// otherwise Express treats them as a bookmarkId lookup (L2 shadowing fix).
 bookmarkRouter.get('/bookmarks', isLoggedIn, asyncHandler(getUserBookmarks));
+bookmarkRouter.get('/user-dashboard-stats', isLoggedIn, asyncHandler(getAllUserDashboardStats));
 bookmarkRouter.get('/:bookmarkId', isLoggedIn, asyncHandler(getBookmarkById));
 
 bookmarkRouter.post('/:bookmarkId/scrape', isLoggedIn, asyncHandler(manualScrape));
 bookmarkRouter.post('/:bookmarkId/summary', isLoggedIn, asyncHandler(getBookmarkSummary));
 
 bookmarkRouter.post('/:bookmarkId/pause', isLoggedIn, asyncHandler(pauseBookmark));
-bookmarkRouter.post('/"bookmarkId/resume', isLoggedIn, asyncHandler(resumeBookmark));
+bookmarkRouter.post('/:bookmarkId/resume', isLoggedIn, asyncHandler(resumeBookmark));
 bookmarkRouter.post('/:bookmarkId/alert', isLoggedIn, asyncHandler(triggerAlert));
 
 bookmarkRouter.get('/:bookmarkId/dashboard-stats', isLoggedIn, asyncHandler(getDashboardStats));
-bookmarkRouter.get('/user-dashboard-stats', isLoggedIn, asyncHandler(getAllUserDashboardStats));
 bookmarkRouter.get('/:bookmarkId/scrape-data', isLoggedIn, asyncHandler(getBookmarkScrapeData));
 
 export default bookmarkRouter;
