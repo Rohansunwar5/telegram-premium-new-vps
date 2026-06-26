@@ -526,6 +526,13 @@ class BookmarkService {
 
     private async scheduleNextScrape(bookmarkId: string, channelId: string, channelName: string, interval: number ) {
         await scrapeQueue.add('scrape-channel', {bookmarkId,channelId,channelName,isInitial: false } , { delay: interval });
+        // Record when the next scrape will run, so the dashboard shows a real time
+        // instead of the epoch default (1/1/1970). The no-new-messages branches
+        // schedule a job here but otherwise never write nextScrapeAt back.
+        await this._bookmarkRepository.updateBookmark(bookmarkId, {
+            nextScrapeAt: new Date(Date.now() + interval),
+            scrapeInterval: interval,
+        });
     }
 
     private calculateManualAlertTimeWindow(alertTime: string) {
