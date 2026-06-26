@@ -3,11 +3,16 @@ import { calculateScrapeInterval, formatInterval } from '../scrapeInterval.util'
 
 const HOUR = 60 * 60 * 1000;
 
+const MIN = 30 * 60 * 1000;
+
 describe('calculateScrapeInterval', () => {
-  it('< 1h span → 1 hour', () => {
-    expect(calculateScrapeInterval(30 * 60 * 1000)).toBe(HOUR);
+  it('< 30m span → 30 minute floor', () => {
+    expect(calculateScrapeInterval(6 * 60 * 1000)).toBe(MIN);
   });
-  it('1–6h span → that span', () => {
+  it('exactly 30m span → 30 minutes', () => {
+    expect(calculateScrapeInterval(MIN)).toBe(MIN);
+  });
+  it('30m–6h span → that span', () => {
     expect(calculateScrapeInterval(3 * HOUR)).toBe(3 * HOUR);
   });
   it('6–24h span → 6 hours', () => {

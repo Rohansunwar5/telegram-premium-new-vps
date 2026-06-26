@@ -7,7 +7,7 @@ import { IScrapeData } from '../models/scrapeData.model';
 import { BookmarkRepository, ISeedBookmarkStats } from '../repository/bookmark.repository';
 import { UserRepository } from '../repository/user.repository';
 import logger from '../utils/logger';
-import { calculateScrapeInterval, formatInterval } from '../utils/scrapeInterval.util';
+import { calculateScrapeInterval, formatInterval, MIN_SCRAPE_INTERVAL } from '../utils/scrapeInterval.util';
 import { ChannelService } from './channel.service';
 import mailService from './mail.service';
 import { S3Service } from './s3.service';
@@ -234,8 +234,9 @@ class BookmarkService {
                     const nextInterval = calculateScrapeInterval(latestScrape.timeDifference);
                     await this.scheduleNextScrape(bookmarkId, channelId, channelName, nextInterval);
                 } else {
-                    // Default to 1 hour if no previous data
-                    await this.scheduleNextScrape(bookmarkId, channelId, channelName, 60 * 60 * 1000);
+                    // No prior scrape (first run on a freshly-seeded bookmark). Use the
+                    // velocity of the seeded analysis batch to pick the interval.
+                    await this.scheduleNextScrape(bookmarkId, channelId, channelName, this.seededScrapeInterval(bookmark));
                 }
 
                 return {
@@ -522,6 +523,21 @@ class BookmarkService {
             // instead of committing with stale stats.
             if (session) throw error;
         }
+    }
+
+    // Initial-scrape interval for a bookmark that has no scrape history yet.
+    // Uses the span of the seeded analysis batch (firstMessageEver↔lastMessageEver)
+    // as the velocity signal. NOTE: this span is only meaningful as a single batch
+    // right after seeding — ongoing scrapes use the per-batch timeDifference instead,
+    // because firstMessageEver/lastMessageEver become all-time and would grow forever.
+    private seededScrapeInterval(bookmark: any): number {
+        if (bookmark?.firstMessageEver && bookmark?.lastMessageEver) {
+            const span = Math.abs(
+                new Date(bookmark.lastMessageEver).getTime() - new Date(bookmark.firstMessageEver).getTime()
+            );
+            return calculateScrapeInterval(span);
+        }
+        return MIN_SCRAPE_INTERVAL;
     }
 
     private async scheduleNextScrape(bookmarkId: string, channelId: string, channelName: string, interval: number ) {

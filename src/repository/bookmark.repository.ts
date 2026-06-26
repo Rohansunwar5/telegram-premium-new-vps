@@ -3,6 +3,7 @@ import bookmarkModel, { IBookmark } from '../models/bookmark.model';
 import scrapeDataModel, { IScrapeData } from '../models/scrapeData.model';
 import logger from '../utils/logger';
 import { NotFoundError } from '../errors/not-found.error';
+import { calculateScrapeInterval, MIN_SCRAPE_INTERVAL } from '../utils/scrapeInterval.util';
 
 export interface ISeedBookmarkStats {
     totalMessages?: number;
@@ -92,6 +93,20 @@ export class BookmarkRepository {
             triggerWords: triggerWords || [],
             s3Prefix,
         };
+
+        // A scrape is queued immediately on creation, so give the dashboard a real
+        // "next scrape" time right away instead of the epoch default (1/1/1970).
+        // Base it on the seeded batch velocity (same logic the scraper uses) so it
+        // matches what the first completed scrape will set — no flicker.
+        let initialInterval = MIN_SCRAPE_INTERVAL;
+        if (seedStats?.firstMessageEver && seedStats?.lastMessageEver) {
+            const span = Math.abs(
+                new Date(seedStats.lastMessageEver).getTime() - new Date(seedStats.firstMessageEver).getTime()
+            );
+            initialInterval = calculateScrapeInterval(span);
+        }
+        doc.scrapeInterval = initialInterval;
+        doc.nextScrapeAt = new Date(Date.now() + initialInterval);
 
         // Seed aggregate statistics from the channel analysis the user just viewed,
         // so the bookmark shows the same rich data immediately instead of zeros/1970.

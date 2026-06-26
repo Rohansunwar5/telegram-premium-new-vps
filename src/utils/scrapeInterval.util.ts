@@ -1,13 +1,16 @@
 // Pure scrape-scheduling math, extracted from the bookmark.service god-object
 // (M13). No I/O, no state — safe to unit test directly.
 
+// Floor: never scrape a channel more often than this, no matter how busy it is.
+export const MIN_SCRAPE_INTERVAL = 30 * 60 * 1000; // 30 minutes
+
 // Pick the next scrape interval from how far apart the last batch's messages were.
 export const calculateScrapeInterval = (timeDifference: number): number => {
-  // If messages span less than 1 hour, scrape every hour
-  if (timeDifference < 60 * 60 * 1000) {
-    return 60 * 60 * 1000; // 1 hour
+  // Very busy channel: clamp to the 30-minute floor.
+  if (timeDifference < MIN_SCRAPE_INTERVAL) {
+    return MIN_SCRAPE_INTERVAL;
   }
-  // If messages span 1-6 hours, use that interval
+  // If messages span 30 min – 6 hours, scrape at the channel's own pace.
   if (timeDifference <= 6 * 60 * 60 * 1000) {
     return timeDifference;
   }
