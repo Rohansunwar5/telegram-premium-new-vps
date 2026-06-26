@@ -4,7 +4,7 @@ import { BadRequestError } from '../errors/bad-request.error';
 import { InternalServerError } from '../errors/internal-server.error';
 import { NotFoundError } from '../errors/not-found.error';
 import { IScrapeData } from '../models/scrapeData.model';
-import { BookmarkRepository } from '../repository/bookmark.repository';
+import { BookmarkRepository, ISeedBookmarkStats } from '../repository/bookmark.repository';
 import { UserRepository } from '../repository/user.repository';
 import logger from '../utils/logger';
 import { calculateScrapeInterval, formatInterval } from '../utils/scrapeInterval.util';
@@ -29,6 +29,7 @@ interface IBookmarkChannelParams {
     alertTime: string;
     alertDays?: string[];
     triggerWords?: string[];
+    seedStats?: ISeedBookmarkStats;
 }
 
 interface IUpdateBookmarksSettingsParams {
@@ -56,7 +57,7 @@ class BookmarkService {
     ) {}
 
     async bookmarkChannel(params: IBookmarkChannelParams) {
-        const { userId, channelName, channelId, alertTime, alertDays, triggerWords } = params;
+        const { userId, channelName, channelId, alertTime, alertDays, triggerWords, seedStats } = params;
 
         const existingBookmark = await this._bookmarkRepository.getBookmarkByUserAndChannel(userId, channelId);
 
@@ -73,6 +74,7 @@ class BookmarkService {
             alertTime,
             alertDays,
             triggerWords,
+            seedStats,
         });
 
         if(!bookmark) throw new InternalServerError('Failed to ceate bookmark');
@@ -205,6 +207,19 @@ class BookmarkService {
                 // Only get messages NEWER than the latest message we already have
                 scrapeParams.since = lastNewestMessage;
                 scrapeParams.limit = null; // Remove limit to get all new messages
+            } else if (bookmark.firstMessageEver || bookmark.lastMessageEver) {
+                // Bookmark was seeded from the channel analysis at creation but has no
+                // scrape record yet. Use the newest seeded message time as the cursor so
+                // this first scrape only fetches messages newer than what the analysis
+                // already counted — otherwise we'd re-count those ~100 and show false data.
+                // (firstMessageEver/lastMessageEver naming is inconsistent upstream, so
+                // take the later of the two defensively.)
+                const seedCursor = [bookmark.firstMessageEver, bookmark.lastMessageEver]
+                    .filter((d): d is Date => !!d)
+                    .sort((a, b) => b.getTime() - a.getTime())[0];
+                logger.info(`📍 Using seeded analysis cursor: ${seedCursor}`);
+                scrapeParams.since = seedCursor;
+                scrapeParams.limit = null;
             } else {
                 logger.info(`📍 First scrape for this bookmark - getting latest 100 messages`);
             }

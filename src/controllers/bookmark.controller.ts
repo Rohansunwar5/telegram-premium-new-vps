@@ -14,7 +14,7 @@ const bookmarkService = new BookmarkService(bookmarkRepository, s3Service, chann
 
 export const createBookmark = async (req: Request, res: Response, next: NextFunction) => {
   const { _id: userId } = req.user;
-  const { channelName, channelId, alertTime, alertDays, triggerWords } = req.body;
+  const { channelName, channelId, alertTime, alertDays, triggerWords, stats } = req.body;
 
   const response = await bookmarkService.bookmarkChannel({
     userId,
@@ -22,7 +22,8 @@ export const createBookmark = async (req: Request, res: Response, next: NextFunc
     channelId,
     alertTime,
     alertDays,
-    triggerWords
+    triggerWords,
+    seedStats: stats
   });
 
   next(response);

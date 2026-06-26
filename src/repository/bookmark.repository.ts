@@ -4,6 +4,17 @@ import scrapeDataModel, { IScrapeData } from '../models/scrapeData.model';
 import logger from '../utils/logger';
 import { NotFoundError } from '../errors/not-found.error';
 
+export interface ISeedBookmarkStats {
+    totalMessages?: number;
+    uniqueUsersTotal?: number;
+    totalLinks?: number;
+    frequencyHourly?: number[];
+    frequencyUser?: Record<string, number>;
+    frequencyWeekday?: Record<string, number>;
+    firstMessageEver?: Date | string | null;
+    lastMessageEver?: Date | string | null;
+}
+
 export interface ICreateBookmarkParams {
     userId: string;
     channelName: string;
@@ -11,6 +22,7 @@ export interface ICreateBookmarkParams {
     alertTime: string;
     alertDays?: string[];
     triggerWords?: string[];
+    seedStats?: ISeedBookmarkStats;
 }
 
 interface IGetScrapeDataParams {
@@ -68,18 +80,37 @@ export class BookmarkRepository {
     private _scrapeDataModel = scrapeDataModel;
 
     async createBookmark(params: ICreateBookmarkParams): Promise <IBookmark> {
-        const { userId, channelName, channelId, alertTime, alertDays, triggerWords } = params;
+        const { userId, channelName, channelId, alertTime, alertDays, triggerWords, seedStats } = params;
         const s3Prefix = `bookmarks/${userId}/${channelId}`;
 
-        return this._bookmarkModel.create({
-        userId,
-        channelName,
-        channelId,
-        alertTime,
-        alertDays,
-        triggerWords: triggerWords || [],
-        s3Prefix,
-        });
+        const doc: Record<string, any> = {
+            userId,
+            channelName,
+            channelId,
+            alertTime,
+            alertDays,
+            triggerWords: triggerWords || [],
+            s3Prefix,
+        };
+
+        // Seed aggregate statistics from the channel analysis the user just viewed,
+        // so the bookmark shows the same rich data immediately instead of zeros/1970.
+        // Only defined values are copied so schema defaults still apply otherwise.
+        if (seedStats) {
+            const seedable: (keyof ISeedBookmarkStats)[] = [
+                'totalMessages', 'uniqueUsersTotal', 'totalLinks',
+                'frequencyHourly', 'frequencyUser', 'frequencyWeekday',
+                'firstMessageEver', 'lastMessageEver',
+            ];
+            for (const key of seedable) {
+                if (seedStats[key] !== undefined && seedStats[key] !== null) doc[key] = seedStats[key];
+            }
+            doc.totalScrapes = 1;
+            doc.lastStatisticsUpdate = new Date();
+            doc.lastScrapedAt = new Date();
+        }
+
+        return this._bookmarkModel.create(doc);
     }
 
     async getBookmarkById(bookmarkId: string, session?: mongoose.ClientSession):Promise<IBookmark | null> {
