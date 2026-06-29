@@ -8,6 +8,7 @@ import { BookmarkRepository, ISeedBookmarkStats } from '../repository/bookmark.r
 import { UserRepository } from '../repository/user.repository';
 import logger from '../utils/logger';
 import { calculateScrapeInterval, formatInterval, MIN_SCRAPE_INTERVAL } from '../utils/scrapeInterval.util';
+import { safeMapKey, toSafeMap } from '../utils/mongoMap.util';
 import { ChannelService } from './channel.service';
 import mailService from './mail.service';
 import { S3Service } from './s3.service';
@@ -464,13 +465,16 @@ class BookmarkService {
             if (scrapeData.analysis?.frequencyUser && scrapeData.analysis.frequencyUser instanceof Map) {
                 logger.info(`👤 Processing user frequency data for ${scrapeData.analysis.frequencyUser.size} users`);
 
-                const currentUserMap = bookmark.frequencyUser || new Map();
+                // toSafeMap also defends against any legacy bookmark whose stored
+                // frequencyUser still has raw "." / "$" keys from before this fix.
+                const currentUserMap = toSafeMap<number>(bookmark.frequencyUser || new Map());
                 updates.frequencyUser = new Map(currentUserMap);
 
                 scrapeData.analysis.frequencyUser.forEach((count, username) => {
-                    const currentCount = updates.frequencyUser.get(username) || 0;
-                    updates.frequencyUser.set(username, currentCount + count);
-                    logger.info(`👤 User ${username}: +${count} messages (total: ${currentCount + count})`);
+                    const key = safeMapKey(username);
+                    const currentCount = updates.frequencyUser.get(key) || 0;
+                    updates.frequencyUser.set(key, currentCount + count);
+                    logger.info(`👤 User ${key}: +${count} messages (total: ${currentCount + count})`);
                 });
             }
 

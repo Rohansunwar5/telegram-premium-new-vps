@@ -4,6 +4,7 @@ import scrapeDataModel, { IScrapeData } from '../models/scrapeData.model';
 import logger from '../utils/logger';
 import { NotFoundError } from '../errors/not-found.error';
 import { calculateScrapeInterval, MIN_SCRAPE_INTERVAL } from '../utils/scrapeInterval.util';
+import { toSafeMap } from '../utils/mongoMap.util';
 
 export interface ISeedBookmarkStats {
     totalMessages?: number;
@@ -120,6 +121,9 @@ export class BookmarkRepository {
             for (const key of seedable) {
                 if (seedStats[key] !== undefined && seedStats[key] !== null) doc[key] = seedStats[key];
             }
+            // frequencyUser keys are usernames → may contain "." / "$" that the
+            // Mongoose Map rejects. Sanitize so seeding can't crash createBookmark.
+            if (doc.frequencyUser) doc.frequencyUser = toSafeMap(doc.frequencyUser);
             doc.totalScrapes = 1;
             doc.lastStatisticsUpdate = new Date();
             doc.lastScrapedAt = new Date();
@@ -206,16 +210,14 @@ export class BookmarkRepository {
 
                 processedParams.analysis = {
                     frequencyHourly: params.analysis.frequencyHourly || [], // Updated field name
-                    frequencyUser: params.analysis.frequencyUser instanceof Map
-                        ? params.analysis.frequencyUser
-                        : new Map(Object.entries(params.analysis.frequencyUser || {})),
+                    // Sanitize: usernames/trigger words can contain "." / "$",
+                    // which Mongoose Maps reject (crashes the whole scrape job).
+                    frequencyUser: toSafeMap(params.analysis.frequencyUser),
                     frequencyWeekday: params.analysis.frequencyWeekday instanceof Map
                         ? params.analysis.frequencyWeekday
                         : new Map(Object.entries(params.analysis.frequencyWeekday || {})),
                     links: params.analysis.links || [],
-                    triggerFrequency: params.analysis.triggerFrequency instanceof Map // Updated field name
-                        ? params.analysis.triggerFrequency
-                        : new Map(Object.entries(params.analysis.triggerFrequency || {}))
+                    triggerFrequency: toSafeMap(params.analysis.triggerFrequency)
                 };
 
                 logger.info(`Processed analysis data:`, {
